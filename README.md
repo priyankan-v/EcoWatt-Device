@@ -6,9 +6,6 @@ https://wokwi.com/projects/438990299357436929
 ### Install the Draw.io VS Code Extension
 ### Create a new file with extension .drawio, .drawio.png (e.g., ecoWattDiagram.drawio.png)
 
-Alright, let’s break **Milestone 1** down so it stops looking like a giant wall of text and starts looking like a clear to-do list you can actually act on.
-
----
 
 ## **What Milestone 1 Really Is**
 
