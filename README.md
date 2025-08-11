@@ -1,5 +1,8 @@
 # EcoWatt-Device
 
+## Wokwi Project
+https://wokwi.com/projects/438990299357436929
+
 Alright, let’s break **Milestone 1** down so it stops looking like a giant wall of text and starts looking like a clear to-do list you can actually act on.
 
 ---
