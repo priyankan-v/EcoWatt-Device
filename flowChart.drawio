@@ -1,0 +1,73 @@
+<mxfile host="65bd71144e">
+    <diagram id="EcoWattPetriNet" name="PetriNet">
+        <mxGraphModel dx="808" dy="787" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="P1" value="Idle (P1)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="205" y="10" width="80" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="P2" value="Data Available (P2)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="180" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="P3" value="Ready to Upload (P3)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="180" width="130" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="P4" value="Uploading (P4)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="304" y="330" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="P5" value="Buffer Empty (P5)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="130" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="T1" value="Poll Inverter (T1)" style="rectangle;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="110" width="90" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="T2" value="Buffer Data (T2)" style="rectangle;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;" parent="1" vertex="1">
+                    <mxGeometry x="415" y="90" width="90" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="T3" value="Trigger Upload (T3)" style="rectangle;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="190" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="T4" value="Upload Data (T4)" style="rectangle;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="340" width="90" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="T5" value="Clear Buffer (T5)" style="rectangle;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="260" width="90" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" parent="1" source="P1" target="T1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" parent="1" source="T1" target="P2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" parent="1" source="P2" target="T2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" parent="1" source="T2" target="P1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" parent="1" source="P2" target="T3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" parent="1" source="T3" target="P3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7" parent="1" source="P3" target="T4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" parent="1" source="T4" target="P4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" parent="1" source="P4" target="T5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" parent="1" source="T5" target="P5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" parent="1" source="P5" target="P1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
