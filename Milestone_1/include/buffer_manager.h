@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <mutex>
-#include "sample.h"
+#include "sampler.h"
 
 class BufferManager {
 public:

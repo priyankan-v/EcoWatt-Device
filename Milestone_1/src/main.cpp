@@ -3,7 +3,7 @@
 #include <iomanip>
 #include <thread>
 #include <chrono>
-#include "../include/sample.h"
+#include "../include/sampler.h"
 #include "../include/buffer_manager.h"
 #include "../include/uploader.h"
 

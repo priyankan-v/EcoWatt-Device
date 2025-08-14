@@ -2,7 +2,7 @@
 #define UPLOADER_H
 
 #include <vector>
-#include "sample.h"
+#include "sampler.h"
 
 void upload_buffer(const std::vector<Sample>& buffer);
 

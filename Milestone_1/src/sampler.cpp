@@ -1,4 +1,4 @@
-#include "../include/sample.h"
+#include "../include/sampler.h"
 #include <random>
 
 Sample acquire_sample() {

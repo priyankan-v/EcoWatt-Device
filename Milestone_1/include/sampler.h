@@ -1,5 +1,5 @@
-#ifndef SAMPLE_H
-#define SAMPLE_H
+#ifndef SAMPLER_H
+#define SAMPLER_H
 
 #include <chrono>
 
@@ -12,4 +12,4 @@ struct Sample {
 
 Sample acquire_sample();
 
-#endif // SAMPLE_H
+#endif // SAMPLER_H
