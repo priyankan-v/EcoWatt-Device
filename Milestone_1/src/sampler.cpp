@@ -1,5 +1,6 @@
 #include "../include/sampler.h"
 #include <random>
+#include <chrono>
 
 Sample acquire_sample() {
     static std::default_random_engine eng{std::random_device{}()};

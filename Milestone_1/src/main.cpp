@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <iomanip>
 #include <thread>
@@ -15,9 +14,9 @@ void print_sample(const Sample& s) {
 }
 
 int main() {
-    const int poll_interval_ms = 2000;
+    const int poll_interval_ms = 3000;
     const int upload_interval_ms = 15000;
-    const int buffer_max = 7;
+    const int buffer_max = 5;
 
     BufferManager bufferManager;
     auto last_upload = std::chrono::steady_clock::now();
