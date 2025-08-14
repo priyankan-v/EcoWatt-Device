@@ -1,2 +1,7 @@
 
 /Milestone_1/.vscode
+/Milestone_1/build/
+/Milestone_1/src/*.exe
+/Milestone_1/src/*.o
+/Milestone_1/*.exe
+/Milestone_1/*.o

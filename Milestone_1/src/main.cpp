@@ -1,35 +1,44 @@
-// main.cpp
-#include "poll_simulator.h"
-#include "buffer_data.h"
-#include "upload_to_cloud.h"
+
 #include <iostream>
-using namespace std;
+#include <iomanip>
+#include <thread>
+#include <chrono>
+#include "../include/sample.h"
+#include "../include/buffer_manager.h"
+#include "../include/uploader.h"
 
-int main()
-{
-    sim_dict sim_dict;
-    vector<float> voltage;
-    vector<float> current;
+void print_sample(const Sample& s) {
+    std::cout << "Sample Ready {'t': " << std::fixed << std::setprecision(2) << s.t
+              << ", 'voltage': " << s.voltage
+              << ", 'current': " << s.current
+              << ", 'power': " << s.power << "}\n";
+}
 
-    for (int i = 0; i <30; i++){
-        if (i % 3 == 0) {
-            sim_dict = poll_simulator();
+int main() {
+    const int poll_interval_ms = 2000;
+    const int upload_interval_ms = 15000;
+    const int buffer_max = 7;
 
-            voltage = buffer_data(sim_dict.voltage, voltage);
-            current = buffer_data(sim_dict.current, current);
-        }
+    BufferManager bufferManager;
+    auto last_upload = std::chrono::steady_clock::now();
 
-        if (i % 15 == 0){
-            cout << "Voltage data at t = " << i << " : ";
-            upload_to_cloud(voltage);
-            // Reset the buffer after uploading
-            voltage = {};
+    while (true) {
+        std::cout << "Idle started\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
+        std::cout << "[Poll Timer = 2s] tick -> Poll Ready\n";
+        std::cout << "Not Uploading = Polling\n";
 
-            cout << "Current data at t = " << i << " : ";
-            upload_to_cloud(current);
-            current = {};
+        Sample s = acquire_sample();
+        print_sample(s);
+        bufferManager.push(s);
+        std::cout << "Pushed | Buffer size = " << bufferManager.size() << "\n";
+
+        if (bufferManager.size() >= buffer_max ||
+            std::chrono::steady_clock::now() - last_upload > std::chrono::milliseconds(upload_interval_ms)) {
+            auto buf = bufferManager.get_and_clear();
+            upload_buffer(buf);
+            last_upload = std::chrono::steady_clock::now();
         }
     }
-
     return 0;
 }

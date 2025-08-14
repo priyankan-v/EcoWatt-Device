@@ -1,3 +1,0 @@
-Run:
-g++ main.cpp poll_simulator.cpp buffer_data.cpp upload_to_cloud.cpp -o main.exe
-.\main.exe
