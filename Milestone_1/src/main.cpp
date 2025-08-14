@@ -1,7 +1,7 @@
 // main.cpp
-#include "poll_simulator.h"
-#include "buffer_data.h"
-#include "upload_to_cloud.h"
+#include "../include/poll_simulator.h"
+#include "../include/buffer_data.h"
+#include "../include/upload_to_cloud.h"
 #include <iostream>
 using namespace std;
 

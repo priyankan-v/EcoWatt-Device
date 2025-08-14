@@ -1,7 +1,6 @@
 // upload_to_cloud.cpp
-#include "upload_to_cloud.h"
+#include "../include/upload_to_cloud.h"
 #include <iostream>
-using namespace std;
 
 void upload_to_cloud(vector<float> array){
     float sum = 0;

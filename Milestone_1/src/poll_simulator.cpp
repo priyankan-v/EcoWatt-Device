@@ -1,5 +1,5 @@
 // poll_simulator.cpp
-#include "poll_simulator.h"
+#include "../include/poll_simulator.h"
 #include <cstdlib>
 
 sim_dict poll_simulator() {

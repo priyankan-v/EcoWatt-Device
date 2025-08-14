@@ -1,4 +1,4 @@
-// buffer_data.h
+// Function declarations for buffer_data
 #ifndef BUFFER_DATA_H
 #define BUFFER_DATA_H
 #include <vector>
