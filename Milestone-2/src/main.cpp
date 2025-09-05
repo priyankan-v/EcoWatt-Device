@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <wifi_manager.h>
-
-
+#include <api_client.h>
 
 void setup() {
   // put your setup code here, to run once:
@@ -12,6 +11,17 @@ void setup() {
         Serial.println("Failed to initialize WiFi. Restarting in 5 seconds...");
         delay(5000);
         ESP.restart();
+    }
+  
+    // Test api_client
+    if (api_init()) {
+      String endpoint = "read";
+      String frame = "110300000002C69B";
+      String result = api_send_request(endpoint, frame);
+      Serial.print("API Response: ");
+      Serial.println(result);
+    } else {
+      Serial.println("API client initialization failed.");
     }
 }
 
