@@ -3,6 +3,11 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
+bool api_init() {
+    // Dummy implementation for API initialization
+    return true; // Return true to indicate success
+}
+
 String api_send_request(const String& endpoint, const String& frame) {
     
     HTTPClient http;
