@@ -31,7 +31,6 @@ unsigned long writeTime = 25000;
 
 // Function to append CRC to the request frame
 String appendCRC(const String& requestFrameWithoutCRC) {
-    // Calculate the frame length
     int frameLength = requestFrameWithoutCRC.length() / 2;
     uint8_t frameBytes[frameLength];
 
@@ -40,14 +39,12 @@ String appendCRC(const String& requestFrameWithoutCRC) {
         frameBytes[i] = strtoul(requestFrameWithoutCRC.substring(i * 2, i * 2 + 2).c_str(), nullptr, 16);
     }
 
-    // Calculate CRC
     uint16_t crc = calculateCRC(frameBytes, frameLength);
 
     // Convert CRC to hex string
     char crcHex[5];
     snprintf(crcHex, sizeof(crcHex), "%02X%02X", crc & 0xFF, (crc >> 8) & 0xFF);
 
-    // Append CRC to the frame and return
     return requestFrameWithoutCRC + String(crcHex);
 }
 
