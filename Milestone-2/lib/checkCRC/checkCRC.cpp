@@ -15,7 +15,7 @@ bool checkCRC(const String& responseFrame) {
 
     uint16_t receivedCRC = (responseBytes[frameLength - 2]) | (responseBytes[frameLength - 1] << 8);
 
-    // Calculate CRC on all bytes except the last two
+    // Calculate CRC on all bytes except the last two(CRC bytes)
     uint16_t calculatedCRC = calculateCRC(responseBytes, frameLength - 2); 
 
     Serial.print("Calculated CRC: ");
