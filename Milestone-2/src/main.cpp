@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <wifi_manager.h>
 #include <api_client.h>
+#include <calculateCRC.h>
+#include <checkCRC.h>
 
 void setup() {
   // put your setup code here, to run once:
@@ -20,6 +22,14 @@ void setup() {
       String result = api_send_request(endpoint, frame);
       Serial.print("API Response: ");
       Serial.println(result);
+
+      // CRC validation
+      if (checkCRC(result)) {
+        Serial.println("CRC check PASSED");
+      } else {
+        Serial.println("CRC check FAILED");
+      }
+
     } else {
       Serial.println("API client initialization failed.");
     }

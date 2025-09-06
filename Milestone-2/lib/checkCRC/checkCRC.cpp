@@ -1,7 +1,7 @@
 #include "checkCRC.h"
 #include "calculateCRC.h"
 
-bool validateCRC(const String& responseFrame) {
+bool checkCRC(const String& responseFrame) {
     if (responseFrame.length() < 8) {
         Serial.println("Response frame too short for CRC validation.");
         return false;

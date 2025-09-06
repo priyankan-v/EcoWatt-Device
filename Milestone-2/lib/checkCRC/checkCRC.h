@@ -4,6 +4,6 @@
 #include <cstdint>
 #include <Arduino.h>
 
-bool validateCRC(const String& responseFrame);
+bool checkCRC(const String& responseFrame);
 
 #endif
