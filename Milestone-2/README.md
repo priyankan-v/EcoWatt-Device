@@ -38,3 +38,50 @@ Update `lib/config/config.h` with your specific:
   - Modbus protocol parameters
   - System health check intervals
 
+# Project Code Summary
+
+## File Summaries
+
+### src/
+- **main.cpp**: Entry point that initializes all modules (WiFi, scheduler, error handler) and runs the main loop with periodic task scheduling.
+
+### lib/config/
+- **config.h**: Centralized configuration file containing all constants, API credentials, timing parameters, and PROGMEM data arrays.
+
+### lib/wifi_manager/
+- **wifi_manager.cpp/h**: Manages WiFi connection establishment, reconnection logic, and connection status monitoring.
+
+### lib/api_client/
+- **api_client.cpp/h**: HTTP client for sending Modbus frames to the remote API with retry logic, timeout handling, and exponential backoff.
+
+### lib/error_handler/
+- **error_handler.cpp/h**: Centralized error logging system with watchdog timer support and system health monitoring.
+
+### lib/modbus_handler/
+- **modbus_handler.cpp/h**: Core Modbus protocol implementation including frame generation, CRC calculation/validation, response parsing, and exception handling.
+
+### lib/scheduler/
+- **scheduler.cpp/h**: Task-based scheduler that manages periodic operations (read/write) and stores data in circular buffer with timestamp tracking.
+
+### lib/calculateCRC/ & lib/checkCRC/
+- **calculateCRC.cpp/h**: CRC-16 calculation functions for Modbus frame integrity.  
+- **checkCRC.cpp/h**: CRC validation functions for incoming Modbus responses.
+
+### lib/decoder/ (Legacy)
+- **decoder.cpp/h**: Wrapper functions around modbus_handler (can be removed as it duplicates functionality).
+
+---
+
+## Overall Workflow
+
+1. **System Initialization**: Main starts up, initializes error handler, scheduler, WiFi connection, and API client.  
+2. **Task Scheduling**: Scheduler runs periodic tasks every 100ms checking for due operations.  
+3. **Register Reading**: Every 5 seconds, read voltage/current registers (0x0000–0x0002).  
+4. **Frame Generation**: Modbus handler creates request frame with slave address, function code, and register addresses.  
+5. **CRC Addition**: Calculate and append CRC-16 checksum to ensure frame integrity.  
+6. **API Request**: Send frame to remote API via HTTP POST with retry logic and timeout handling.  
+7. **Response Parsing**: Validate received response, check CRC, and handle any Modbus exception codes.  
+8. **Data Storage**: Store valid register values in circular buffer with timestamps.  
+9. **Register Writing**: Every 25 seconds, write export power percentage to register 0x0008.  
+10. **Health Monitoring**: Continuous WiFi status checking, error logging, and watchdog timer feeding.  
+11. **Loop Continuation**: Return to step 2 and repeat the cycle indefinitely.  
