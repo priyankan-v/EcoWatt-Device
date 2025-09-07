@@ -7,6 +7,11 @@
 #include <requestFrame_generator.h>
 #include <vector>
 
+
+unsigned long pollTime = 5000;
+unsigned long writeTime = 25000;
+unsigned long uploadTime = 30000;
+
 // Define gains and units for each register
 const float gains[] = {10, 10, 100, 10, 10, 10, 10, 10, 1, 1};
 const char* units[] = {"V", "A", "Hz", "V", "V", "A", "A", "°C", "%", "W"};
@@ -19,15 +24,24 @@ String requestframeWithoutCRC_read;
 String endpoint_read = "read";
 uint8_t functionCode_read = 0x03;
 String requestFrame_read;
-unsigned long pollTime = 5000;
 
 // String requestFrameWithoutCRC_write = "110600080010";
-std::vector<uint16_t> write_registers = {0x0008, 0x0010}; //  array of register to write and its value
+std::vector<uint16_t> write_registers = {0x0008, 0x0010}; //  array of one register to write and its value
 String requestFrameWithoutCRC_write;
 String endpoint_write = "write";
 uint8_t functionCode_write = 0x06;
 String requestFrame_write;
-unsigned long writeTime = 25000;
+
+std::vector<String> sampledRawData;
+
+// Dummy function to upload data to the dashboard
+void uploadToDashboard(const std::vector<String>& data) {
+    Serial.println("Uploading data to dashboard...");
+    for (const auto& item : data) {
+        Serial.println(item);
+    }
+    Serial.println("Upload complete.");
+}
 
 // Function to append CRC to the request frame
 String appendCRC(const String& requestFrameWithoutCRC) {
@@ -90,6 +104,7 @@ void setup() {
 void loop() {
   static unsigned long lastRunTime_read = 0;
   static unsigned long lastRunTime_write = 0;
+  static unsigned long lastUploadTime = 0;
   unsigned long currentTime = millis();
 
   // Check if pollTime has passed
@@ -106,6 +121,10 @@ void loop() {
 
       // CRC validation
       if (checkCRC(result)) {
+        
+        // Store the raw value in sampledRawData
+        sampledRawData.push_back(result);
+
         Serial.println("CRC check PASSED for Read request");
         // Decode response
         std::vector<uint16_t> registerValues = decodeResponse(result);
@@ -119,6 +138,7 @@ void loop() {
           Serial.print(processedValue);
           Serial.print(" ");
           Serial.println(units[i]);
+
         }
       } else {
         Serial.println("CRC check FAILED for Read request");
@@ -151,6 +171,16 @@ void loop() {
     } else {
       Serial.println("Write request frame is empty.");
     }
+  }
+
+  delay(100);
+
+  if (currentTime - lastUploadTime >= uploadTime) {
+    lastUploadTime = currentTime;
+
+    uploadToDashboard(sampledRawData);
+
+    sampledRawData.clear();
   }
 }
 
