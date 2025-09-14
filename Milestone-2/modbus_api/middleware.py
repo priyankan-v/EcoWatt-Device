@@ -8,13 +8,13 @@ def require_api_key():
     if not api_key or api_key != API_KEY:
         return jsonify({"error": "Unauthorized. Invalid or missing API key."}), 401
     
-# function to check CRC of the payload
-def check_crc(payload):
-    """Check if the CRC in the payload is valid."""
+# function to check CRC of the frame
+def check_crc(frame):
+    """Check if the CRC in the frame is valid."""
     try:
-        data = [int(payload[i:i+2], 16) for i in range(0, len(payload)-4, 2)]
-        # received crc is the last two bytes of the payload in little-endian format
-        received_crc = int(payload[-2:] + payload[-4:-2], 16)
+        data = [int(frame[i:i+2], 16) for i in range(0, len(frame)-4, 2)]
+        # received crc is the last two bytes of the frame in little-endian format
+        received_crc = int(frame[-2:] + frame[-4:-2], 16)
         calculated_crc = calculate_crc(data)
         return calculated_crc == received_crc
     except Exception as e:

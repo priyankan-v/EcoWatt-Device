@@ -8,11 +8,9 @@ from middleware import require_api_key, check_crc
 app = Flask(__name__)
 DATA_FILE = "data.csv"
 
-# Ensure file exists
 if not os.path.exists(DATA_FILE):
-    df = pd.DataFrame(columns=["timestamp", "payload"])
+    df = pd.DataFrame(columns=["timestamp", "frame"])
     df.to_csv(DATA_FILE, index=False)
-
 
 def load_data():
     return pd.read_csv(DATA_FILE)
@@ -27,15 +25,13 @@ def validate_api_key():
         return validation_response
 
 
-@app.route("/data", methods=["GET"])
+@app.route("/read/all", methods=["GET"])
 def get_data():
     """Fetch all stored data"""
     df = load_data()
     return jsonify(df.to_dict(orient="records"))
 
-
-# fetch the last entry
-@app.route("/data/last", methods=["GET"])
+@app.route("/read", methods=["GET"])
 def get_last_data():
     """Fetch the last entry"""
     df = load_data()
@@ -44,8 +40,7 @@ def get_last_data():
     last_entry = df.iloc[-1]
     return jsonify(last_entry.to_dict())
 
-# fetch the last n entries that are requested
-@app.route("/data/last/<int:n>", methods=["GET"])
+@app.route("/read/<int:n>", methods=["GET"])
 def get_last_n_data(n):
     """Fetch the last n entries"""
     df = load_data()
@@ -54,25 +49,24 @@ def get_last_n_data(n):
     last_n_entries = df.iloc[-n:]
     return jsonify(last_n_entries.to_dict(orient="records"))
 
-# Add new data entry
-@app.route("/data", methods=["POST"])
+@app.route("/write", methods=["POST"])
 def add_data():
     """Add a new data entry"""
     data = request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return jsonify({"error": "Empty request body"}), 400
     else:
         try:
-            payload = str(data["payload"])
-        except KeyError as e:
-            return jsonify({"error": f"Missing key: {e}"}), 400
+            frame = str(data["frame"])
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
 
-        if not check_crc(payload):
-            return jsonify({"error": "Invalid CRC"}), 400
+        if not check_crc(frame):
+            return jsonify({"error": "Malformed Frame"}), 400
 
         new_row = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "payload": payload
+            "frame": frame
         }
 
     new_row_df = pd.DataFrame([new_row])
@@ -82,4 +76,4 @@ def add_data():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host="127.0.0.1", port=8080)
