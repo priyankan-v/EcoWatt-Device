@@ -1,42 +1,119 @@
 #include "api_client.h"
 #include "config.h"
+#include "error_handler.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-bool api_init() {
-    // Dummy implementation for API initialization
-    return true; // Return true to indicate success
+bool api_init(void) {
+    Serial.println(F("API client initialized"));
+    return true;
 }
 
 String api_send_request(const String& endpoint, const String& frame) {
+    if (WiFi.status() != WL_CONNECTED) {
+        log_error(ERROR_WIFI_DISCONNECTED, "WiFi not connected for API request");
+        return "";
+    }
     
     HTTPClient http;
-    String url = String(API_BASE_URL) + "/api/inverter/" + endpoint;
+    
+    // Pre-allocate string to avoid fragmentation
+    String url;
+    url.reserve(128);
+    url = API_BASE_URL;
+    url += "/api/inverter/";
+    url += endpoint;
     
     http.begin(url);
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", API_KEY);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.addHeader(F("Content-Type"), F("application/json"));
+    http.addHeader(F("Authorization"), API_KEY);
     
-    String request_body = "{\"frame\":\"" + frame + "\"}";
+    // Pre-allocate request body
+    String request_body;
+    request_body.reserve(frame.length() + 20);
+    request_body = F("{\"frame\":\"");
+    request_body += frame;
+    request_body += F("\"}");
     
     int http_code = http.POST(request_body);
     
     if (http_code == HTTP_CODE_OK) {
         String response = http.getString();
         
-        int start = response.indexOf("\"frame\":\"") + 9;
-        int end = response.indexOf("\"", start);
-        
-        if (start >= 9 && end > start) {
-            String frame_hex = response.substring(start, end);
-            http.end();
-            return frame_hex;
+        // Parse JSON response more robustly
+        int start = response.indexOf(F("\"frame\":\""));
+        if (start >= 0) {
+            start += 9; // Length of "\"frame\":\""
+            int end = response.indexOf('\"', start);
+            
+            if (end > start) {
+                String frame_hex = response.substring(start, end);
+                http.end();
+                
+                // Basic validation of hex string
+                if (frame_hex.length() > 0 && frame_hex.length() % 2 == 0) {
+                    return frame_hex;
+                } else {
+                    log_error(ERROR_INVALID_RESPONSE, "Invalid frame format in response");
+                }
+            }
+        } else {
+            log_error(ERROR_INVALID_RESPONSE, "Frame not found in response");
         }
+    } else if (http_code > 0) {
+        char error_msg[64];
+        snprintf(error_msg, sizeof(error_msg), "HTTP error: %d", http_code);
+        log_error(ERROR_HTTP_FAILED, error_msg);
     } else {
-        Serial.print("HTTP error: ");
-        Serial.println(http_code);
+        log_error(ERROR_HTTP_TIMEOUT, "HTTP request timeout");
     }
     
     http.end();
+    return "";
+}
+
+String api_send_request_with_retry(const String& endpoint, const String& frame) {
+    int retry_count = 0;
+    error_code_t last_error_code = ERROR_NONE;
+    
+    while (retry_count <= MAX_RETRIES) {
+        String response = api_send_request(endpoint, frame);
+        
+        if (response.length() > 0) {
+            // Success
+            return response;
+        }
+        
+        // Get the last error for retry decision
+        // Note: In a real implementation, you'd get this from error_handler
+        if (WiFi.status() != WL_CONNECTED) {
+            last_error_code = ERROR_WIFI_DISCONNECTED;
+        } else {
+            last_error_code = ERROR_HTTP_FAILED;
+        }
+        
+        if (!should_retry(last_error_code, retry_count)) {
+            char error_msg[64];
+            snprintf(error_msg, sizeof(error_msg), "Max retries exceeded for %s", endpoint.c_str());
+            log_error(ERROR_MAX_RETRIES_EXCEEDED, error_msg);
+            break;
+        }
+        
+        retry_count++;
+        unsigned long delay_ms = get_retry_delay(retry_count - 1);
+        
+        Serial.print(F("Retrying API request in "));
+        Serial.print(delay_ms);
+        Serial.println(F(" ms..."));
+        
+        delay(delay_ms);
+        
+        // Try to reconnect WiFi if needed
+        if (last_error_code == ERROR_WIFI_DISCONNECTED) {
+            handle_wifi_reconnection();
+        }
+    }
+    
     return "";
 }

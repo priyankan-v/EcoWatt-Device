@@ -5,5 +5,6 @@
 
 bool api_init(void);
 String api_send_request(const String& endpoint, const String& frame);
+String api_send_request_with_retry(const String& endpoint, const String& frame);
 
 #endif
