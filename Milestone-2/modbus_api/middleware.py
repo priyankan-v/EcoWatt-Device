@@ -1,6 +1,6 @@
 from flask import request, jsonify
 
-API_KEY = "12345"
+API_KEY = "ColdPlay2025"
 
 def require_api_key():
     """Validate the API key from the request headers."""
@@ -21,15 +21,6 @@ def check_crc(payload):
         return False
 
 def calculate_crc(data):
-    """
-    Calculate the CRC-16 (Modbus) checksum for the given data.
-
-    Args:
-        data (list of int): The input data as a list of bytes (0-255).
-
-    Returns:
-        int: The calculated CRC value as a 16-bit integer.
-    """
     crc = 0xFFFF
     for byte in data:
         crc ^= byte
