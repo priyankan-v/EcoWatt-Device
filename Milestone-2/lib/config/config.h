@@ -14,6 +14,10 @@
 #define API_BASE_URL "http://20.15.114.131:8080"
 #define API_KEY "NjhhZWIwNDU1ZDdmMzg3MzNiMTQ5YWQzOjY4YWViMDQ1NWQ3ZjM4NzMzYjE0OWFjOQ=="
 
+// Cloud Upload API Configuration
+#define UPLOAD_API_BASE_URL "http://127.0.0.1:8080/"
+#define UPLOAD_API_KEY "ColdPlay2025"
+
 // HTTP configuration
 #define HTTP_TIMEOUT_MS 10000
 #define MAX_RETRIES 3

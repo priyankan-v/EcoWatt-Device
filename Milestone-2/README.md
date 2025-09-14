@@ -70,6 +70,11 @@ Update `lib/config/config.h` with your specific:
 ### lib/decoder/ (Legacy)
 - **decoder.cpp/h**: Wrapper functions around modbus_handler (can be removed as it duplicates functionality).
 
+### modbus_api/
+- **app.py**: API controller for the Modbus API.
+- **middleware.py**: Validation functions (API Key & CRC)
+- **data.csv**: Local database file
+
 ---
 
 ## Overall Workflow
