@@ -9,6 +9,7 @@ typedef enum {
     TASK_READ_REGISTERS,
     TASK_WRITE_REGISTER,
     TASK_HEALTH_CHECK,
+    TASK_UPLOAD_DATA,
     TASK_COUNT
 } task_type_t;
 
@@ -37,5 +38,6 @@ void store_register_reading(const uint16_t* values, size_t count);
 void execute_read_task(void);
 void execute_write_task(void);
 void execute_health_check_task(void);
+void execute_upload_task(void);
 
 #endif

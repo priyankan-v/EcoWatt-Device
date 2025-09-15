@@ -3,12 +3,14 @@
 #include "api_client.h"
 #include "modbus_handler.h"
 #include "error_handler.h"
+#include "cloudAPI_handler.h"
 
 // Task definitions
 static scheduler_task_t tasks[TASK_COUNT] = {
     {TASK_READ_REGISTERS, POLL_INTERVAL_MS, 0, true},
     {TASK_WRITE_REGISTER, WRITE_INTERVAL_MS, 0, true},
-    {TASK_HEALTH_CHECK, HEALTH_CHECK_INTERVAL_MS, 0, true}
+    {TASK_HEALTH_CHECK, HEALTH_CHECK_INTERVAL_MS, 0, true},
+    {TASK_UPLOAD_DATA, UPLOAD_INTERVAL_MS, 0, true}
 };
 
 // Circular buffer for readings
@@ -47,6 +49,9 @@ void scheduler_run(void) {
                     break;
                 case TASK_HEALTH_CHECK:
                     execute_health_check_task();
+                    break;
+                case TASK_UPLOAD_DATA:
+                    execute_upload_task();
                     break;
                 default:
                     break;
@@ -93,8 +98,13 @@ void execute_read_task(void) {
                                        pgm_read_word(&READ_REGISTERS[0]), READ_REGISTER_COUNT);
     frame = append_crc_to_frame(frame);
     
-    // Send request with retry logic
-    String response = api_send_request_with_retry("read", frame);
+    String url;
+    url.reserve(128);
+    url = API_BASE_URL;
+    url += "/api/inverter/read";
+    String method = "POST";
+    String api_key = API_KEY;
+    String response = api_send_request_with_retry(url, method, api_key, frame);
     
     if (response.length() > 0) {
         uint16_t values[READ_REGISTER_COUNT];
@@ -139,7 +149,14 @@ void execute_write_task(void) {
                                        EXPORT_POWER_REGISTER, export_power_value);
     frame = append_crc_to_frame(frame);
     
-    String response = api_send_request_with_retry("write", frame);
+
+    String url;
+    url.reserve(128);
+    url = API_BASE_URL;
+    url += "/api/inverter/write";
+    String method = "POST";
+    String api_key = API_KEY;
+    String response = api_send_request_with_retry(url, method, api_key, frame);
     
     if (response.length() > 0) {
         if (validate_modbus_response(response)) {
@@ -160,4 +177,33 @@ void execute_write_task(void) {
 
 void execute_health_check_task(void) {
     check_system_health();
+}
+
+
+void execute_upload_task(void) {
+    Serial.println(F("Executing upload task..."));
+    
+    // Generate upload frame from buffered readings
+    String frame ="1103040904002A2870";
+    String encrypted_frame = generate_upload_frame_from_buffer_with_encryption(frame);
+    encrypted_frame = append_crc_to_frame(encrypted_frame);
+    
+    String url;
+    url.reserve(128);
+    url = UPLOAD_API_BASE_URL;
+    url += "write";
+    String method = "POST";
+    String api_key = UPLOAD_API_KEY;
+    String response = api_send_request_with_retry(url, method, api_key, encrypted_frame);
+    
+    if (response.length() > 0) {
+        if (validate_upload_response(response)) {
+                Serial.print(F("Upload successful: "));
+                Serial.print(encrypted_frame.length());
+                Serial.println(F(" bytes uploaded."));
+                reset_error_state();
+        } else {
+            log_error(ERROR_HTTP_FAILED, "Upload response validation failed");
+        }
+    }
 }
