@@ -1,6 +1,12 @@
 from flask import request, jsonify
+from dotenv import load_dotenv
+import os
 
-API_KEY = "ColdPlay2025"
+# Load environment variables from .env file
+load_dotenv()
+
+# Get the API_KEY from the environment
+API_KEY = os.getenv("API_KEY")
 
 def require_api_key():
     """Validate the API key from the request headers."""
