@@ -49,6 +49,7 @@ bool should_retry(error_code_t error_code, int retry_count) {
         case ERROR_MODBUS_EXCEPTION:
         case ERROR_INVALID_REGISTER:
             return false; // Don't retry protocol errors
+        case ERROR_INVALID_HTTP_METHOD:
         default:
             return false;
     }

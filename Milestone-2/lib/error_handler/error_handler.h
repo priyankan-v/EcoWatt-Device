@@ -13,7 +13,8 @@ typedef enum {
     ERROR_CRC_FAILED,
     ERROR_MODBUS_EXCEPTION,
     ERROR_INVALID_REGISTER,
-    ERROR_MAX_RETRIES_EXCEEDED
+    ERROR_MAX_RETRIES_EXCEEDED,
+    ERROR_INVALID_HTTP_METHOD
 } error_code_t;
 
 // Error handling functions
