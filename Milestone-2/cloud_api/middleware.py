@@ -7,6 +7,7 @@ load_dotenv()
 
 # Get the API_KEY from the environment
 API_KEY = os.getenv("API_KEY")
+CONTENT_TYPE = os.getenv("CONTENT_TYPE")
 
 def require_api_key():
     """Validate the API key from the request headers."""
@@ -17,8 +18,8 @@ def require_api_key():
 def validate_content_type():
     """Validate the Content-Type header to ensure it is application/json."""
     content_type = request.headers.get("Content-Type")
-    if content_type != "application/json":
-        return jsonify({"error": "Invalid Content-Type. Expected application/json."}), 400
+    if content_type != CONTENT_TYPE:
+        return jsonify({"error": f"Invalid Content-Type. Expected {CONTENT_TYPE}."}), 400
 
 # Function to check CRC of the frame
 def check_crc(frame):
