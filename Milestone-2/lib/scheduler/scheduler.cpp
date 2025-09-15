@@ -184,10 +184,10 @@ void execute_upload_task(void) {
     Serial.println(F("Executing upload task..."));
     
     // Generate upload frame from buffered readings
-    String frame ="1103040904002A2870";
+    String frame ="1103040904002A";
     String encrypted_frame = generate_upload_frame_from_buffer_with_encryption(frame);
     encrypted_frame = append_crc_to_frame(encrypted_frame);
-    
+
     String url;
     url.reserve(128);
     url = UPLOAD_API_BASE_URL;

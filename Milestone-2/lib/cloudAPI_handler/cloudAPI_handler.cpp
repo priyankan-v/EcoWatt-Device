@@ -31,8 +31,7 @@ bool validate_upload_response(const String& response) {
 String encrypt_upload_frame(const String& frame) {
 
     // mock function to simulate encryption
-    String encrypted_frame = frame;
-    return encrypted_frame;
+    return frame;
 }
 
 String generate_upload_frame_from_buffer(const String& frame) {
@@ -42,8 +41,8 @@ String generate_upload_frame_from_buffer(const String& frame) {
     }
 
     // mock function to simulate frame generation
-    String generated_frame = frame;
-    return generated_frame;
+
+    return frame;
 }
 
 String generate_upload_frame_from_buffer_with_encryption(const String& frame) {
