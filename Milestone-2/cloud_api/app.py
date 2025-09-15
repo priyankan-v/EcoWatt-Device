@@ -31,13 +31,13 @@ def validate_request():
     if content_type_validation:
         return content_type_validation
 
-@app.route("/read/all", methods=["GET"])
+@app.route("/api/cloud/read/all", methods=["GET"])
 def get_data():
     """Fetch all stored data"""
     df = load_data()
     return jsonify(df.to_dict(orient="records"))
 
-@app.route("/read", methods=["GET"])
+@app.route("/api/cloud/read", methods=["GET"])
 def get_last_data():
     """Fetch the last entry"""
     df = load_data()
@@ -46,7 +46,7 @@ def get_last_data():
     last_entry = df.iloc[-1]
     return jsonify(last_entry.to_dict())
 
-@app.route("/read/<int:n>", methods=["GET"])
+@app.route("/api/cloud/read/<int:n>", methods=["GET"])
 def get_last_n_data(n):
     """Fetch the last n entries"""
     df = load_data()
@@ -55,7 +55,7 @@ def get_last_n_data(n):
     last_n_entries = df.iloc[-n:]
     return jsonify(last_n_entries.to_dict(orient="records"))
 
-@app.route("/write", methods=["POST"])
+@app.route("/api/cloud/write", methods=["POST"])
 def add_data():
     """Add a new data entry"""
     # Validate request body
