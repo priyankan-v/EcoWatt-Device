@@ -4,7 +4,7 @@ API_KEY = "ColdPlay2025"
 
 def require_api_key():
     """Validate the API key from the request headers."""
-    api_key = request.headers.get("api-key")
+    api_key = request.headers.get("Authorization")
     if not api_key or api_key != API_KEY:
         return jsonify({"error": "Unauthorized. Invalid or missing API key."}), 401
     
