@@ -4,6 +4,8 @@
 #include "modbus_handler.h"
 #include "error_handler.h"
 #include "cloudAPI_handler.h"
+#include "time_sync.h"
+#include "compress2.h"
 
 // Task definitions
 static scheduler_task_t tasks[TASK_COUNT] = {
@@ -13,21 +15,21 @@ static scheduler_task_t tasks[TASK_COUNT] = {
     {TASK_UPLOAD_DATA, UPLOAD_INTERVAL_MS, 0, true}
 };
 
-// Circular buffer for readings
-static register_reading_t reading_buffer[MEMORY_BUFFER_SIZE];
-static size_t buffer_head = 0;
-static size_t buffer_count = 0;
+// Double buffer definitions
+static register_reading_t buffer1[MEMORY_BUFFER_SIZE];
+static register_reading_t buffer2[MEMORY_BUFFER_SIZE];
+static size_t buffer1_head = 0, buffer2_head = 0;
+static size_t buffer1_count = 0, buffer2_count = 0;
+static bool is_buffer1_active = true;
+
+uint8_t compressed_data[MAX_COMPRESSION_SIZE] = {0}; // Output buffer for compression
+uint16_t compressed_data_len = 0; // Length of compressed data
+static unsigned long last_buffer_full_time = 0; // Timestamp of last buffer full event
 
 // PROGMEM data definitions
 const PROGMEM float REGISTER_GAINS[MAX_REGISTERS] = {10.0, 10.0, 100.0, 10.0, 10.0, 10.0, 10.0, 10.0, 1.0, 1.0};
 const PROGMEM char* REGISTER_UNITS[MAX_REGISTERS] = {"V", "A", "Hz", "V", "V", "A", "A", "°C", "%", "W"};
-const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT] = {0x0000, 0x0001, 0x0002};
-
-void scheduler_init(void) {
-    buffer_head = 0;
-    buffer_count = 0;
-    Serial.println(F("Scheduler initialized"));
-}
+const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT] = {0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007, 0x0008, 0x0009};
 
 void scheduler_run(void) {
     unsigned long current_time = millis();
@@ -68,10 +70,60 @@ void store_register_reading(const uint16_t* values, size_t count) {
     if (count > READ_REGISTER_COUNT) {
         count = READ_REGISTER_COUNT;
     }
-    
-    register_reading_t* reading = &reading_buffer[buffer_head];
-    
-    // Copy values
+
+    register_reading_t* reading;
+
+    if (is_buffer1_active) {
+        if (buffer1_count >= MEMORY_BUFFER_SIZE) {
+            unsigned long time_after_buffer_full = millis();
+
+            if ((time_after_buffer_full - last_buffer_full_time) >= UPLOAD_INTERVAL_MS) {
+                last_buffer_full_time = time_after_buffer_full;
+                compressed_data_len = compress_buffer(buffer1, buffer1_count, compressed_data);
+
+                if (compressed_data_len > 0) {
+                    Serial.println(F("Buffer 1 compressed successfully."));
+                } else {
+                    log_error(ERROR_COMPRESSION_FAILED, "Buffer 1 compression failed");
+                }
+            }
+
+            if (compressed_data_len > 0) {
+                memset(buffer1, 0, sizeof(buffer1)); // Clear only if compression succeeded
+            }
+
+            buffer1_head = 0;
+            buffer1_count = 0;
+            is_buffer1_active = false;
+        }
+
+        reading = &buffer1[buffer1_head];
+        buffer1_head = (buffer1_head + 1) % MEMORY_BUFFER_SIZE;
+        buffer1_count++;
+
+    } else {
+
+        if (buffer2_count >= MEMORY_BUFFER_SIZE) {
+            unsigned long time_after_buffer_full = millis();
+
+            if ((time_after_buffer_full - last_buffer_full_time) >= UPLOAD_INTERVAL_MS) {
+                last_buffer_full_time = time_after_buffer_full;
+                compressed_data_len = compress_buffer(buffer2, buffer2_count, compressed_data); // Just to estimate size
+                memset(buffer2, 0, sizeof(buffer2));
+
+            }
+
+            buffer2_head = 0;
+            buffer2_count = 0;
+            is_buffer1_active = true;
+        }
+
+        reading = &buffer2[buffer2_head];
+        buffer2_head = (buffer2_head + 1) % MEMORY_BUFFER_SIZE;
+        buffer2_count++;
+    }
+
+    // Copy values to the current reading
     for (size_t i = 0; i < count; i++) {
         reading->values[i] = values[i];
     }
@@ -80,14 +132,8 @@ void store_register_reading(const uint16_t* values, size_t count) {
     for (size_t i = count; i < READ_REGISTER_COUNT; i++) {
         reading->values[i] = 0;
     }
-    
-    reading->timestamp = millis();
-    
-    // Update circular buffer indices
-    buffer_head = (buffer_head + 1) % MEMORY_BUFFER_SIZE;
-    if (buffer_count < MEMORY_BUFFER_SIZE) {
-        buffer_count++;
-    }
+
+    reading->timestamp = epochNow();
 }
 
 void execute_read_task(void) {
@@ -116,6 +162,7 @@ void execute_read_task(void) {
             
             // Display processed values
             Serial.println(F("Register values:"));
+            Serial.println(epochNow()); // Print current epoch time
             for (size_t i = 0; i < actual_count; i++) {
                 float gain = pgm_read_float(&REGISTER_GAINS[i]);
                 const char* unit = (const char*)pgm_read_ptr(&REGISTER_UNITS[i]);
@@ -182,9 +229,18 @@ void execute_health_check_task(void) {
 
 void execute_upload_task(void) {
     Serial.println(F("Executing upload task..."));
-    
-    // Generate upload frame from buffered readings
-    String frame ="1103040904002A";
+    String frame;
+    frame.reserve(MAX_COMPRESSION_SIZE * 2);
+
+    if (compressed_data_len > 0) {
+        frame = bytes_to_hex(compressed_data, compressed_data_len);
+        Serial.print(F("Compressed data: "));
+        Serial.println(frame);
+    } else {
+        log_error(ERROR_COMPRESSION_FAILED, "No compressed data available for upload");
+        return;
+    }
+
     String encrypted_frame = generate_upload_frame_from_buffer_with_encryption(frame);
     encrypted_frame = append_crc_to_frame(encrypted_frame);
 
@@ -206,4 +262,20 @@ void execute_upload_task(void) {
             log_error(ERROR_HTTP_FAILED, "Upload response validation failed");
         }
     }
+}
+
+// Convert a byte array to a hex string
+String bytes_to_hex(const uint8_t* data, size_t len) {
+    String hex;
+    hex.reserve(len * 2); // pre-allocate for efficiency
+
+    const char hex_chars[] = "0123456789ABCDEF";
+
+    for (size_t i = 0; i < len; i++) {
+        uint8_t byte = data[i];
+        hex += hex_chars[byte >> 4];   // high nibble
+        hex += hex_chars[byte & 0x0F]; // low nibble
+    }
+
+    return hex;
 }

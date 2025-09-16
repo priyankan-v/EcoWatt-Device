@@ -7,11 +7,10 @@
 #include <modbus_handler.h>
 void setup() {
     Serial.begin(SERIAL_BAUD_RATE);
-    Serial.println(F("EcoWatt Device - Milestone 2"));
+    Serial.println(F("EcoWatt Device - Milestone 3"));
     
     // Initialize modules
     error_handler_init();
-    scheduler_init();
     
     // Initialize WiFi
     if (!wifi_init()) {

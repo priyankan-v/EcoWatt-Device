@@ -28,7 +28,6 @@ typedef struct {
 } register_reading_t;
 
 // Scheduler functions
-void scheduler_init(void);
 void scheduler_run(void);
 
 // Data storage functions

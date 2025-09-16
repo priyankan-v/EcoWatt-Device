@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "config.h"
+#include "time_sync.h"
 
 bool wifi_init(void) {
     Serial.print("Connecting to WiFi: ");
@@ -15,6 +16,7 @@ bool wifi_init(void) {
     }
     
     if (WiFi.status() == WL_CONNECTED) {
+        syncTime();
         Serial.println("\nWiFi connected");
         Serial.print("IP address: ");
         Serial.println(WiFi.localIP());
