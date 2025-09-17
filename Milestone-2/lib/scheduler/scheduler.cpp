@@ -18,7 +18,6 @@ static scheduler_task_t tasks[TASK_COUNT] = {
 // Double buffer definitions
 static register_reading_t buffer1[MEMORY_BUFFER_SIZE];
 static register_reading_t buffer2[MEMORY_BUFFER_SIZE];
-static size_t buffer1_head = 0, buffer2_head = 0;
 static size_t buffer1_count = 0, buffer2_count = 0;
 static bool is_buffer1_active = true;
 
@@ -40,7 +39,7 @@ void scheduler_run(void) {
         }
         
         if (current_time - tasks[i].last_run_ms >= tasks[i].interval_ms) {
-            tasks[i].last_run_ms = current_time;
+            tasks[i].last_run_ms += tasks[i].interval_ms;
             
             switch (tasks[i].type) {
                 case TASK_READ_REGISTERS:
@@ -53,7 +52,11 @@ void scheduler_run(void) {
                     execute_health_check_task();
                     break;
                 case TASK_UPLOAD_DATA:
+                    Serial.print(F("Current Time: "));
+                    Serial.println(millis());
                     execute_upload_task();
+                    Serial.print(F("Upload Task Executed at: "));
+                    Serial.println(millis());
                     break;
                 default:
                     break;
@@ -74,70 +77,81 @@ void store_register_reading(const uint16_t* values, size_t count) {
     register_reading_t* reading;
 
     if (is_buffer1_active) {
-        if (buffer1_count >= MEMORY_BUFFER_SIZE) {
-            unsigned long time_after_buffer_full = millis();
+        Serial.println(F("Storing in Buffer 1"));
 
-            if ((time_after_buffer_full - last_buffer_full_time) >= UPLOAD_INTERVAL_MS) {
-                last_buffer_full_time = time_after_buffer_full;
-                compressed_data_len = compress_buffer(buffer1, buffer1_count, compressed_data);
+        reading = &buffer1[buffer1_count];
+        reading->timestamp = epochNow();
 
-                if (compressed_data_len > 0) {
-                    Serial.println(F("Buffer 1 compressed successfully."));
-                } else {
-                    log_error(ERROR_COMPRESSION_FAILED, "Buffer 1 compression failed");
-                }
-            }
-
-            if (compressed_data_len > 0) {
-                memset(buffer1, 0, sizeof(buffer1)); // Clear only if compression succeeded
-            }
-
-            buffer1_head = 0;
-            buffer1_count = 0;
-            is_buffer1_active = false;
+        // Copy values to the current reading
+        for (size_t i = 0; i < count; i++) {
+            reading->values[i] = values[i];
+        }
+        
+        // Fill remaining with zeros
+        for (size_t i = count; i < READ_REGISTER_COUNT; i++) {
+            reading->values[i] = 0;
         }
 
-        reading = &buffer1[buffer1_head];
-        buffer1_head = (buffer1_head + 1) % MEMORY_BUFFER_SIZE;
         buffer1_count++;
 
-    } else {
-
-        if (buffer2_count >= MEMORY_BUFFER_SIZE) {
-            unsigned long time_after_buffer_full = millis();
-
-            if ((time_after_buffer_full - last_buffer_full_time) >= UPLOAD_INTERVAL_MS) {
-                last_buffer_full_time = time_after_buffer_full;
-                compressed_data_len = compress_buffer(buffer2, buffer2_count, compressed_data); // Just to estimate size
-                memset(buffer2, 0, sizeof(buffer2));
-
+        if (buffer1_count >= MEMORY_BUFFER_SIZE) {
+            is_buffer1_active = false;
+                
+            Serial.print(buffer1_count * sizeof(register_reading_t));
+            Serial.println(F(" bytes"));
+            Serial.println(F("Buffer 1 Data : "));
+            for (size_t i = 0; i < buffer1_count; i++) {
+                Serial.print(buffer1[i].timestamp);
+                for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
+                    Serial.print(F(" "));
+                    Serial.print(buffer1[i].values[j]);
+                }
+                Serial.println(F("|"));
             }
-
-            buffer2_head = 0;
-            buffer2_count = 0;
-            is_buffer1_active = true;
+            Serial.println();
         }
 
-        reading = &buffer2[buffer2_head];
-        buffer2_head = (buffer2_head + 1) % MEMORY_BUFFER_SIZE;
+    } else {
+        Serial.println(F("Storing in Buffer 2"));
+
+        reading = &buffer2[buffer2_count];
+        reading->timestamp = epochNow();
+
+        // Copy values to the current reading
+        for (size_t i = 0; i < count; i++) {
+            reading->values[i] = values[i];
+        }
+        
+        // Fill remaining with zeros
+        for (size_t i = count; i < READ_REGISTER_COUNT; i++) {
+            reading->values[i] = 0;
+        }
+
         buffer2_count++;
-    }
 
-    // Copy values to the current reading
-    for (size_t i = 0; i < count; i++) {
-        reading->values[i] = values[i];
-    }
-    
-    // Fill remaining with zeros
-    for (size_t i = count; i < READ_REGISTER_COUNT; i++) {
-        reading->values[i] = 0;
-    }
+        if (buffer2_count >= MEMORY_BUFFER_SIZE) {
+            is_buffer1_active = true;
 
-    reading->timestamp = epochNow();
+            Serial.print(buffer2_count * sizeof(register_reading_t));
+            Serial.println(F(" bytes"));
+            Serial.println(F("Buffer2 Data : "));
+            for (size_t i = 0; i < buffer2_count; i++) {
+                // Serial.print(F("Timestamp: "));
+                Serial.print(buffer2[i].timestamp);
+                for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
+                    Serial.print(F(" "));
+                    Serial.print(buffer2[i].values[j]);
+                }
+                Serial.println(F("|"));
+            }
+            Serial.println();
+        }
+    }
 }
 
+
 void execute_read_task(void) {
-    Serial.println(F("Executing read task..."));
+    // Serial.println(F("Executing read task..."));
     
     // Generate read frame
     String frame = format_request_frame(SLAVE_ADDRESS, FUNCTION_CODE_READ, 
@@ -161,20 +175,22 @@ void execute_read_task(void) {
             store_register_reading(values, actual_count);
             
             // Display processed values
-            Serial.println(F("Register values:"));
-            Serial.println(epochNow()); // Print current epoch time
+            // Serial.println(F("Register values:"));
+            Serial.print(F("T:"));
+            Serial.print(epochNow()); // Print current epoch time
             for (size_t i = 0; i < actual_count; i++) {
                 float gain = pgm_read_float(&REGISTER_GAINS[i]);
                 const char* unit = (const char*)pgm_read_ptr(&REGISTER_UNITS[i]);
                 float processed_value = values[i] / gain;
                 
-                Serial.print(F("  Reg "));
+                Serial.print(F(" R"));
                 Serial.print(i);
-                Serial.print(F(": "));
+                Serial.print(F(":"));
                 Serial.print(processed_value);
-                Serial.print(F(" "));
-                Serial.println(unit);
+                // Serial.print(F(""));
+                Serial.print(unit);
             }
+            Serial.println();
             
             reset_error_state();
         }
@@ -228,54 +244,85 @@ void execute_health_check_task(void) {
 
 
 void execute_upload_task(void) {
-    Serial.println(F("Executing upload task..."));
-    String frame;
-    frame.reserve(MAX_COMPRESSION_SIZE * 2);
+    // Serial.println(F("Executing upload task..."));
 
-    if (compressed_data_len > 0) {
-        frame = bytes_to_hex(compressed_data, compressed_data_len);
-        Serial.print(F("Compressed data: "));
-        Serial.println(frame);
+    if(is_buffer1_active==false && buffer1_count>=MEMORY_BUFFER_SIZE)
+    {
+        compressed_data_len = compress_buffer_with_header(buffer1, buffer1_count, compressed_data);
+
+        if (compressed_data_len >= 5) {
+            Serial.println(F("Buffer 1 compressed successfully."));
+            buffer1_count = 0; // Reset buffer1 count after preparing upload
+            memset(buffer1, 0, sizeof(buffer1)); // Clear only if compression succeeded
+
+        } else {
+            log_error(ERROR_COMPRESSION_FAILED, "Buffer 1 compression failed");
+            return;
+        }
+    }
+    else if(is_buffer1_active==true && buffer2_count>=MEMORY_BUFFER_SIZE)
+    {
+        compressed_data_len = compress_buffer_with_header(buffer2, buffer2_count, compressed_data);
+
+        if (compressed_data_len >= 5) {
+            Serial.println(F("Buffer 2 compressed successfully."));
+            buffer2_count = 0; // Reset buffer2 count after preparing upload
+            memset(buffer2, 0, sizeof(buffer2)); // Clear only if compression succeeded
+        } else {
+            log_error(ERROR_COMPRESSION_FAILED, "Buffer 2 compression failed");
+            return;
+        }
+    }
+    else
+    {
+        log_error(ERROR_COMPRESSION_FAILED, "No data available for upload");
+        return;
+    }
+
+    if (compressed_data_len >= 5) {
+        Serial.print(F("Upload frame data ("));
+        Serial.print(compressed_data_len);
+        Serial.println(F(" bytes):"));
+
+        for (size_t i = 0; i < compressed_data_len; i++) {
+            Serial.print(compressed_data[i]);
+            Serial.print(" ");
+        }
+        Serial.println();
+
+        /*
+        uint8_t encrypted_frame[MAX_COMPRESSION_SIZE];
+        encrypted_frame = generate_upload_frame_from_buffer_with_encryption(compressed_data);
+
+        uint8_t upload_frame_with_crc[MAX_COMPRESSION_SIZE+2];
+        upload_frame_with_crc = append_crc_to_frame(encrypted_frame);
+
+        String url;
+        url.reserve(128);
+        url = UPLOAD_API_BASE_URL;
+        url += "/api/cloud/write";
+        String method = "POST";
+        String api_key = UPLOAD_API_KEY;
+        String response = upload_api_send_request_with_retry(url, method, api_key, encrypted_frame);
+        
+        if (response.length() > 0) {
+            if (validate_upload_response(response)) {
+                    Serial.print(F("Upload successful: "));
+                    Serial.print(sizeof(upload_frame_with_crc));
+                    Serial.println(F(" bytes uploaded."));
+                    reset_error_state();
+            } else {
+                log_error(ERROR_HTTP_FAILED, "Upload response validation failed");
+            }
+        }
+        
+
+        // memset(compressed_data, 0, sizeof(compressed_data));
+        // compressed_data_len = 0;
+        */
+
     } else {
         log_error(ERROR_COMPRESSION_FAILED, "No compressed data available for upload");
         return;
     }
-
-    String encrypted_frame = generate_upload_frame_from_buffer_with_encryption(frame);
-    encrypted_frame = append_crc_to_frame(encrypted_frame);
-
-    String url;
-    url.reserve(128);
-    url = UPLOAD_API_BASE_URL;
-    url += "/api/cloud/write";
-    String method = "POST";
-    String api_key = UPLOAD_API_KEY;
-    String response = api_send_request_with_retry(url, method, api_key, encrypted_frame);
-    
-    if (response.length() > 0) {
-        if (validate_upload_response(response)) {
-                Serial.print(F("Upload successful: "));
-                Serial.print(encrypted_frame.length());
-                Serial.println(F(" bytes uploaded."));
-                reset_error_state();
-        } else {
-            log_error(ERROR_HTTP_FAILED, "Upload response validation failed");
-        }
-    }
-}
-
-// Convert a byte array to a hex string
-String bytes_to_hex(const uint8_t* data, size_t len) {
-    String hex;
-    hex.reserve(len * 2); // pre-allocate for efficiency
-
-    const char hex_chars[] = "0123456789ABCDEF";
-
-    for (size_t i = 0; i < len; i++) {
-        uint8_t byte = data[i];
-        hex += hex_chars[byte >> 4];   // high nibble
-        hex += hex_chars[byte & 0x0F]; // low nibble
-    }
-
-    return hex;
 }

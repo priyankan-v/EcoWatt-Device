@@ -8,9 +8,7 @@
 #include "scheduler.h"  // Include your register_reading_t and buffers
 
 // Max compressed size estimate: worst case (no compression)
-#define MAX_COMPRESSED_SIZE (MEMORY_BUFFER_SIZE * READ_REGISTER_COUNT * sizeof(uint16_t) + MEMORY_BUFFER_SIZE * sizeof(unsigned long))
 
-size_t compress_buffer(const register_reading_t* buffer, size_t count, uint8_t* output);
-size_t decompress_buffer(const uint8_t* input, size_t input_len, register_reading_t* output, size_t max_count);
+size_t compress_buffer_with_header(const register_reading_t* buffer, size_t count, uint8_t* output);
 
 #endif // COMPRESS2_H
