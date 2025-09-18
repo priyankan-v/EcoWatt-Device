@@ -39,4 +39,6 @@ void execute_write_task(void);
 void execute_health_check_task(void);
 void execute_upload_task(void);
 
+bool attempt_compression(register_reading_t* buffer, size_t* buffer_count);
+
 #endif

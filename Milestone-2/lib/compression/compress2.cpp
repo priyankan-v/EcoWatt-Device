@@ -1,7 +1,7 @@
-#include <Arduino.h>
-#include "scheduler.h" // READ_REGISTER_COUNT, MEMORY_BUFFER_SIZE
+#include "compress2.h"
+#include "error_handler.h"  // For log_error
+#include "config.h"  // For READ_REGISTER_COUNT, MEMORY_BUFFER_SIZE
 
-// Compress the buffer and add header
 size_t compress_buffer_with_header(const register_reading_t* buffer, size_t count, uint8_t* output) {
     uint8_t temp[MAX_COMPRESSION_SIZE]; // temporary buffer for compressed data
     size_t out_index = 0;
@@ -81,6 +81,11 @@ size_t compress_buffer_with_header(const register_reading_t* buffer, size_t coun
         }
     }
 
+      if (temp_index + 5 > MAX_COMPRESSION_SIZE) {
+        log_error(ERROR_COMPRESSION_FAILED, "Compression overflowed");
+        return 0;
+    }
+
     // --- Write header ---
     out_index = 0;
     output[out_index++] = (count >> 8) & 0xFF;              // buffer count high
@@ -88,6 +93,11 @@ size_t compress_buffer_with_header(const register_reading_t* buffer, size_t coun
     output[out_index++] = READ_REGISTER_COUNT;             // register count
     output[out_index++] = (temp_index >> 8) & 0xFF;        // compressed length high
     output[out_index++] = (temp_index & 0xFF);             // compressed length low
+
+    if (out_index > 5) {
+        log_error(ERROR_COMPRESSION_FAILED, "Header compression buffer overflow");
+        return 0;
+    }
 
     // --- Copy compressed payload ---
     memcpy(output + out_index, temp, temp_index);

@@ -22,8 +22,7 @@ static size_t buffer1_count = 0, buffer2_count = 0;
 static bool is_buffer1_active = true;
 
 uint8_t compressed_data[MAX_COMPRESSION_SIZE] = {0}; // Output buffer for compression
-uint16_t compressed_data_len = 0; // Length of compressed data
-static unsigned long last_buffer_full_time = 0; // Timestamp of last buffer full event
+size_t compressed_data_len = 0; // Length of compressed data
 
 // PROGMEM data definitions
 const PROGMEM float REGISTER_GAINS[MAX_REGISTERS] = {10.0, 10.0, 100.0, 10.0, 10.0, 10.0, 10.0, 10.0, 1.0, 1.0};
@@ -167,12 +166,12 @@ void execute_read_task(void) {
     String response = api_send_request_with_retry(url, method, api_key, frame);
     
     if (response.length() > 0) {
-        uint16_t values[READ_REGISTER_COUNT];
+        uint16_t read_values[READ_REGISTER_COUNT];
         size_t actual_count;
-        
-        if (decode_response_registers(response, values, READ_REGISTER_COUNT, &actual_count)) {
+
+        if (decode_response_registers(response, read_values, READ_REGISTER_COUNT, &actual_count)) {
             // Store raw values
-            store_register_reading(values, actual_count);
+            store_register_reading(read_values, actual_count);
             
             // Display processed values
             // Serial.println(F("Register values:"));
@@ -181,7 +180,7 @@ void execute_read_task(void) {
             for (size_t i = 0; i < actual_count; i++) {
                 float gain = pgm_read_float(&REGISTER_GAINS[i]);
                 const char* unit = (const char*)pgm_read_ptr(&REGISTER_UNITS[i]);
-                float processed_value = values[i] / gain;
+                float processed_value = read_values[i] / gain;
                 
                 Serial.print(F(" R"));
                 Serial.print(i);
@@ -242,40 +241,19 @@ void execute_health_check_task(void) {
     check_system_health();
 }
 
-
 void execute_upload_task(void) {
     // Serial.println(F("Executing upload task..."));
 
-    if(is_buffer1_active==false && buffer1_count>=MEMORY_BUFFER_SIZE)
-    {
-        compressed_data_len = compress_buffer_with_header(buffer1, buffer1_count, compressed_data);
-
-        if (compressed_data_len >= 5) {
-            Serial.println(F("Buffer 1 compressed successfully."));
-            buffer1_count = 0; // Reset buffer1 count after preparing upload
-            memset(buffer1, 0, sizeof(buffer1)); // Clear only if compression succeeded
-
-        } else {
-            log_error(ERROR_COMPRESSION_FAILED, "Buffer 1 compression failed");
+    if ((!is_buffer1_active) && (buffer1_count >= MEMORY_BUFFER_SIZE)) {
+        if (!attempt_compression(buffer1, &buffer1_count)) {
             return;
         }
-    }
-    else if(is_buffer1_active==true && buffer2_count>=MEMORY_BUFFER_SIZE)
-    {
-        compressed_data_len = compress_buffer_with_header(buffer2, buffer2_count, compressed_data);
-
-        if (compressed_data_len >= 5) {
-            Serial.println(F("Buffer 2 compressed successfully."));
-            buffer2_count = 0; // Reset buffer2 count after preparing upload
-            memset(buffer2, 0, sizeof(buffer2)); // Clear only if compression succeeded
-        } else {
-            log_error(ERROR_COMPRESSION_FAILED, "Buffer 2 compression failed");
+    } else if (is_buffer1_active && (buffer2_count >= MEMORY_BUFFER_SIZE)) {
+        if (!attempt_compression(buffer2, &buffer2_count)) {
             return;
         }
-    }
-    else
-    {
-        log_error(ERROR_COMPRESSION_FAILED, "No data available for upload");
+    } else {
+        log_error(ERROR_COMPRESSION_FAILED, "Compression skipped, buffer not full");
         return;
     }
 
@@ -290,12 +268,12 @@ void execute_upload_task(void) {
         }
         Serial.println();
 
-        /*
+        // /*
         uint8_t encrypted_frame[MAX_COMPRESSION_SIZE];
-        encrypted_frame = generate_upload_frame_from_buffer_with_encryption(compressed_data);
+        encrypt_compressed_frame(compressed_data, compressed_data_len, encrypted_frame);
 
-        uint8_t upload_frame_with_crc[MAX_COMPRESSION_SIZE+2];
-        upload_frame_with_crc = append_crc_to_frame(encrypted_frame);
+        uint8_t upload_frame_with_crc[MAX_COMPRESSION_SIZE + 2];
+        append_crc_to_upload_frame(encrypted_frame, sizeof(encrypted_frame), upload_frame_with_crc);
 
         String url;
         url.reserve(128);
@@ -303,7 +281,7 @@ void execute_upload_task(void) {
         url += "/api/cloud/write";
         String method = "POST";
         String api_key = UPLOAD_API_KEY;
-        String response = upload_api_send_request_with_retry(url, method, api_key, encrypted_frame);
+        String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, sizeof(upload_frame_with_crc));
         
         if (response.length() > 0) {
             if (validate_upload_response(response)) {
@@ -316,13 +294,35 @@ void execute_upload_task(void) {
             }
         }
         
-
-        // memset(compressed_data, 0, sizeof(compressed_data));
-        // compressed_data_len = 0;
-        */
+        // */
+        memset(compressed_data, 0, sizeof(compressed_data));
+        compressed_data_len = 0;
+        
 
     } else {
         log_error(ERROR_COMPRESSION_FAILED, "No compressed data available for upload");
         return;
     }
+}
+
+// Compress the buffer and add header
+bool attempt_compression(register_reading_t* buffer, size_t* buffer_count) {
+    int retry_count = 0;
+    while (retry_count < MAX_COMPRESSION_RETRIES) {
+        compressed_data_len = compress_buffer_with_header(buffer, *buffer_count, compressed_data);
+
+        if (compressed_data_len >= 5) {
+            Serial.println(F("Buffer compressed successfully."));
+            *buffer_count = 0; // Reset buffer count after preparing upload
+            memset(buffer, 0, sizeof(register_reading_t) * MEMORY_BUFFER_SIZE); // Clear only if compression succeeded
+            return true;
+        } else {
+            retry_count++;
+            Serial.print(F("Compression failed. Retry "));
+            Serial.println(retry_count);
+        }
+    }
+
+    log_error(ERROR_COMPRESSION_FAILED, "Compression failed after retries");
+    return false;
 }

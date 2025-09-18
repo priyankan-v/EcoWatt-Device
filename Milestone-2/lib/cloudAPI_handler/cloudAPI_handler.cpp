@@ -1,4 +1,5 @@
 #include "cloudAPI_handler.h"
+#include "calculateCRC.h"
 
 bool validate_upload_response(const String& response) {
     if (response.length() == 0) {
@@ -28,35 +29,19 @@ bool validate_upload_response(const String& response) {
     return false;
 }
 
-String encrypt_upload_frame(const String& frame) {
-
-    // mock function to simulate encryption
-    return frame;
+void encrypt_compressed_frame(const uint8_t* data, size_t len, uint8_t* output_data) {
+    // Simple XOR encryption with a fixed key for demonstration purposes
+    return;
 }
 
-String generate_upload_frame_from_buffer(const String& frame) {
-    if (frame.length() == 0) {
-        Serial.println(F("Error: No data available in the buffer."));
-        return "";
-    }
+void append_crc_to_upload_frame(const uint8_t* encrypted_frame, size_t frame_length, uint8_t* output_frame) {
 
-    // mock function to simulate frame generation
+    memcpy(output_frame, encrypted_frame, frame_length);
+    // Calculate CRC
+    uint16_t crc = calculateCRC(encrypted_frame, frame_length);
+    // Append CRC to the end of the frame
+    output_frame[frame_length] = crc & 0xFF;         // Low byte    
+    output_frame[frame_length + 1] = (crc >> 8) & 0xFF; // High byte
 
-    return frame;
+    return;
 }
-
-String generate_upload_frame_from_buffer_with_encryption(const String& frame) {
-    // Generate the JSON payload
-    String generated_frame = generate_upload_frame_from_buffer(frame);
-
-    if (generated_frame.length() == 0) {
-        Serial.println(F("Error: Failed to generate upload frame."));
-        return "";
-    }
-
-    // Encrypt the payload
-    String encrypted_frame = encrypt_upload_frame(generated_frame);
-
-    return encrypted_frame;
-}
-

@@ -44,6 +44,7 @@
 #define SERIAL_BAUD_RATE 115200
 #define MEMORY_BUFFER_SIZE (UPLOAD_INTERVAL_MS / POLL_INTERVAL_MS)
 #define MAX_COMPRESSION_SIZE (MEMORY_BUFFER_SIZE * (4 + 2*READ_REGISTER_COUNT))
+#define MAX_COMPRESSION_RETRIES 3 // Maximum number of compression retries
 
 // Register gains (stored in PROGMEM)
 extern const PROGMEM float REGISTER_GAINS[MAX_REGISTERS];

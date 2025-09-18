@@ -76,7 +76,7 @@ String api_send_request(const String& url, const String& method, const String& a
     return "";
 }
 
-String upload_api_send_request(const String& url, const String& method, const String& api_key, const String& frame) {
+String upload_api_send_request(const String& url, const String& method, const String& api_key, const uint8_t* frame, size_t frame_length) {
     if (WiFi.status() != WL_CONNECTED) {
         log_error(ERROR_WIFI_DISCONNECTED, "WiFi not connected for API request");
         return "";
@@ -87,21 +87,12 @@ String upload_api_send_request(const String& url, const String& method, const St
     // Begin the HTTP request
     http.begin(url);
     http.setTimeout(HTTP_TIMEOUT_MS);
-    http.addHeader(F("Content-Type"), F("application/json"));
+    http.addHeader(F("Content-Type"), F("application/octet-stream"));
     http.addHeader(F("Authorization"), api_key);
-
-    // Pre-allocate request body
-    String request_body;
-    request_body.reserve(frame.length() + 20);
-    request_body = F("{\"frame\":\"");
-    request_body += frame;
-    request_body += F("\"}");
     
     int http_code;
     if (method == "POST") {
-        http_code = http.POST(request_body);
-    } else if (method == "GET") {
-        http_code = http.GET();
+        http_code = http.POST(frame, frame_length);
     } else {
         log_error(ERROR_INVALID_HTTP_METHOD, "Unsupported HTTP method");
         http.end();
@@ -187,12 +178,12 @@ String api_send_request_with_retry(const String& url, const String& method, cons
     return "";
 }
 
-String upload_api_send_request_with_retry(const String& url, const String& method, const String& api_key, const String& frame) {
+String upload_api_send_request_with_retry(const String& url, const String& method, const String& api_key, const uint8_t* frame, size_t frame_length) {
     int retry_count = 0;
     error_code_t last_error_code = ERROR_NONE;
 
     while (retry_count <= MAX_RETRIES) {
-        String response = upload_api_send_request(url, method, api_key, frame);
+        String response = upload_api_send_request(url, method, api_key, frame, frame_length);
 
         if (response.length() > 0) {
             // Success
