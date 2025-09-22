@@ -23,9 +23,9 @@ void syncTime() {
     }
 
     if (retry < 10) {
-        epochAtSync = mktime(&timeInfo); // Local epoch
+        time(&epochAtSync);
         millisAtSync = millis();
-        Serial.print(F("Time synced! Local epoch: "));
+        Serial.print(F("Time synced! Local epoch(IST): "));
         Serial.println(epochAtSync);
     } else {
         Serial.println(F("Failed to synchronize time with NTP server."));
@@ -35,7 +35,7 @@ void syncTime() {
 }
 
 // Returns current local epoch like millis()
-time_t epochNow() {
+unsigned long epochNow() {
     if (epochAtSync == 0) {
         // Retry if enough time passed since last attempt
         if (millis() - lastSyncAttempt >= syncRetryInterval) {
@@ -43,5 +43,6 @@ time_t epochNow() {
         }
         return 0; // Still invalid until successful
     }
-    return epochAtSync + (uint32_t)(millis() - millisAtSync) / 1000;
+    return (unsigned long)(epochAtSync + (millis() - millisAtSync) / 1000UL);
 }
+

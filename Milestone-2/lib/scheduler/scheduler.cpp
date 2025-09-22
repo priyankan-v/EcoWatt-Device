@@ -5,7 +5,7 @@
 #include "error_handler.h"
 #include "cloudAPI_handler.h"
 #include "time_sync.h"
-#include "compress2.h"
+#include "compressor.h"
 
 // Task definitions
 static scheduler_task_t tasks[TASK_COUNT] = {
@@ -56,6 +56,7 @@ void scheduler_run(void) {
                     execute_upload_task();
                     Serial.print(F("Upload Task Executed at: "));
                     Serial.println(millis());
+                    Serial.println();
                     break;
                 default:
                     break;
@@ -96,9 +97,9 @@ void store_register_reading(const uint16_t* values, size_t count) {
         if (buffer1_count >= MEMORY_BUFFER_SIZE) {
             is_buffer1_active = false;
                 
+            Serial.print(F("Buffer 1 Data - "));
             Serial.print(buffer1_count * sizeof(register_reading_t));
-            Serial.println(F(" bytes"));
-            Serial.println(F("Buffer 1 Data : "));
+            Serial.println(F("bytes :-"));
             for (size_t i = 0; i < buffer1_count; i++) {
                 Serial.print(buffer1[i].timestamp);
                 for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
@@ -107,7 +108,6 @@ void store_register_reading(const uint16_t* values, size_t count) {
                 }
                 Serial.println(F("|"));
             }
-            Serial.println();
         }
 
     } else {
@@ -131,11 +131,11 @@ void store_register_reading(const uint16_t* values, size_t count) {
         if (buffer2_count >= MEMORY_BUFFER_SIZE) {
             is_buffer1_active = true;
 
+            Serial.print(F("Buffer 2 Data - "));
             Serial.print(buffer2_count * sizeof(register_reading_t));
-            Serial.println(F(" bytes"));
-            Serial.println(F("Buffer2 Data : "));
+            Serial.println(F("bytes :-"));
+            
             for (size_t i = 0; i < buffer2_count; i++) {
-                // Serial.print(F("Timestamp: "));
                 Serial.print(buffer2[i].timestamp);
                 for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
                     Serial.print(F(" "));
@@ -143,7 +143,6 @@ void store_register_reading(const uint16_t* values, size_t count) {
                 }
                 Serial.println(F("|"));
             }
-            Serial.println();
         }
     }
 }
@@ -175,21 +174,21 @@ void execute_read_task(void) {
             
             // Display processed values
             // Serial.println(F("Register values:"));
-            Serial.print(F("T:"));
-            Serial.print(epochNow()); // Print current epoch time
-            for (size_t i = 0; i < actual_count; i++) {
-                float gain = pgm_read_float(&REGISTER_GAINS[i]);
-                const char* unit = (const char*)pgm_read_ptr(&REGISTER_UNITS[i]);
-                float processed_value = read_values[i] / gain;
+            // Serial.print(F("T:"));
+            // Serial.print(epochNow()); // Print current epoch time
+            // for (size_t i = 0; i < actual_count; i++) {
+            //     float gain = pgm_read_float(&REGISTER_GAINS[i]);
+            //     const char* unit = (const char*)pgm_read_ptr(&REGISTER_UNITS[i]);
+            //     float processed_value = read_values[i] / gain;
                 
-                Serial.print(F(" R"));
-                Serial.print(i);
-                Serial.print(F(":"));
-                Serial.print(processed_value);
-                // Serial.print(F(""));
-                Serial.print(unit);
-            }
-            Serial.println();
+            //     Serial.print(F(" R"));
+            //     Serial.print(i);
+            //     Serial.print(F(":"));
+            //     Serial.print(processed_value);
+            //     // Serial.print(F(""));
+            //     Serial.print(unit);
+            // }
+            // Serial.println();
             
             reset_error_state();
         }
@@ -295,7 +294,7 @@ void execute_upload_task(void) {
         }
         
         // */
-        memset(compressed_data, 0, sizeof(compressed_data));
+        memset(compressed_data, 0, compressed_data_len);
         compressed_data_len = 0;
         
 
@@ -325,4 +324,10 @@ bool attempt_compression(register_reading_t* buffer, size_t* buffer_count) {
 
     log_error(ERROR_COMPRESSION_FAILED, "Compression failed after retries");
     return false;
+}
+
+void init_tasks_last_run(unsigned long start_time) {
+    for (int i = 0; i < TASK_COUNT; i++) {
+        tasks[i].last_run_ms = start_time;
+    }
 }

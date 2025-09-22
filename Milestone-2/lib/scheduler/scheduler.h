@@ -40,5 +40,6 @@ void execute_health_check_task(void);
 void execute_upload_task(void);
 
 bool attempt_compression(register_reading_t* buffer, size_t* buffer_count);
+void init_tasks_last_run(unsigned long start_time);
 
 #endif

@@ -6,6 +6,6 @@
 
 // Function to synchronize time with an NTP server
 void syncTime();
-time_t epochNow();
+unsigned long epochNow();
 
 #endif // TIME_SYNC_H

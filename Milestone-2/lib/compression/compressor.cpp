@@ -1,4 +1,15 @@
-#include "compress2.h"
+/**
+ * @file compressor.cpp
+ * @brief Compresses timestamped register readings with a header for transmission.
+ *
+ * Uses delta and run-length encoding for timestamps and register values.
+ * Adds a 5-byte header with sample count(2bytes), register count(1byte), and compressed length(2bytes).
+ * Logs errors if compression exceeds buffer limits.
+ *
+ * Dependencies: config.h, error_handler.h
+ */
+
+#include "compressor.h"
 #include "error_handler.h"  // For log_error
 #include "config.h"  // For READ_REGISTER_COUNT, MEMORY_BUFFER_SIZE
 

@@ -29,6 +29,10 @@ void setup() {
     }
     
     Serial.println(F("Starting main operation loop..."));
+    Serial.println();
+
+    unsigned long now = millis();
+    init_tasks_last_run(now);
 }
 
 void loop() {

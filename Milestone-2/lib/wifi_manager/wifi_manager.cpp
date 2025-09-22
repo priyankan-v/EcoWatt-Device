@@ -16,10 +16,10 @@ bool wifi_init(void) {
     }
     
     if (WiFi.status() == WL_CONNECTED) {
-        syncTime();
         Serial.println("\nWiFi connected");
         Serial.print("IP address: ");
         Serial.println(WiFi.localIP());
+        syncTime(); // Sync time after connecting to WiFi
         return true;
     } else {
         Serial.println("\nWiFi connection failed");

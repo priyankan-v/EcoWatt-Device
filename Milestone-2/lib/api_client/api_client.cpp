@@ -92,7 +92,7 @@ String upload_api_send_request(const String& url, const String& method, const St
     
     int http_code;
     if (method == "POST") {
-        http_code = http.POST(frame, frame_length);
+        http_code = http.POST((uint8_t*)frame, frame_length);
     } else {
         log_error(ERROR_INVALID_HTTP_METHOD, "Unsupported HTTP method");
         http.end();
