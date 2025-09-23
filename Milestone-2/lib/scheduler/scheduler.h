@@ -24,11 +24,10 @@ typedef struct {
 // Circular buffer for storing readings
 typedef struct {
     uint16_t values[READ_REGISTER_COUNT];
-    unsigned long timestamp;
+    // unsigned long timestamp;
 } register_reading_t;
 
 // Scheduler functions
-void scheduler_init(void);
 void scheduler_run(void);
 
 // Data storage functions
@@ -39,5 +38,8 @@ void execute_read_task(void);
 void execute_write_task(void);
 void execute_health_check_task(void);
 void execute_upload_task(void);
+
+bool attempt_compression(register_reading_t* buffer, size_t* buffer_count);
+void init_tasks_last_run(unsigned long start_time);
 
 #endif

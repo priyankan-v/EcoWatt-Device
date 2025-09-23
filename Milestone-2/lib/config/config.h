@@ -25,11 +25,11 @@
 #define MAX_RETRY_DELAY_MS 8000UL
 
 // Timing configuration
-#define POLL_INTERVAL_MS 5000
+#define POLL_INTERVAL_MS 3000
 #define WRITE_INTERVAL_MS 25000
 #define HEALTH_CHECK_INTERVAL_MS 30000
 #define WATCHDOG_TIMEOUT_S 30
-#define UPLOAD_INTERVAL_MS 15000
+#define UPLOAD_INTERVAL_MS 15000 //900000; // 15 minutes
 
 // Modbus configuration
 #define SLAVE_ADDRESS 0x11
@@ -42,14 +42,16 @@
 
 // System configuration
 #define SERIAL_BAUD_RATE 115200
-#define MEMORY_BUFFER_SIZE 32
+#define MEMORY_BUFFER_SIZE (UPLOAD_INTERVAL_MS / POLL_INTERVAL_MS)
+#define MAX_COMPRESSION_SIZE (MEMORY_BUFFER_SIZE * 2 * READ_REGISTER_COUNT)
+#define MAX_COMPRESSION_RETRIES 3 // Maximum number of compression retries
 
 // Register gains (stored in PROGMEM)
 extern const PROGMEM float REGISTER_GAINS[MAX_REGISTERS];
 extern const PROGMEM char* REGISTER_UNITS[MAX_REGISTERS];
 
 // Read registers array
-#define READ_REGISTER_COUNT 3
+#define READ_REGISTER_COUNT 10 
 extern const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT];
 
 #endif
