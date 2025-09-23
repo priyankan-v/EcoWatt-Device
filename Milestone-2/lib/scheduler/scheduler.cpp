@@ -4,7 +4,6 @@
 #include "modbus_handler.h"
 #include "error_handler.h"
 #include "cloudAPI_handler.h"
-#include "time_sync.h"
 #include "compressor.h"
 
 // Task definitions
@@ -80,7 +79,6 @@ void store_register_reading(const uint16_t* values, size_t count) {
         Serial.println(F("Storing in Buffer 1"));
 
         reading = &buffer1[buffer1_count];
-        reading->timestamp = epochNow();
 
         // Copy values to the current reading
         for (size_t i = 0; i < count; i++) {
@@ -101,12 +99,11 @@ void store_register_reading(const uint16_t* values, size_t count) {
             Serial.print(buffer1_count * sizeof(register_reading_t));
             Serial.println(F("bytes :-"));
             for (size_t i = 0; i < buffer1_count; i++) {
-                Serial.print(buffer1[i].timestamp);
                 for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
                     Serial.print(F(" "));
                     Serial.print(buffer1[i].values[j]);
                 }
-                Serial.println(F("|"));
+                Serial.println(F(" |"));
             }
         }
 
@@ -114,7 +111,6 @@ void store_register_reading(const uint16_t* values, size_t count) {
         Serial.println(F("Storing in Buffer 2"));
 
         reading = &buffer2[buffer2_count];
-        reading->timestamp = epochNow();
 
         // Copy values to the current reading
         for (size_t i = 0; i < count; i++) {
@@ -136,12 +132,11 @@ void store_register_reading(const uint16_t* values, size_t count) {
             Serial.println(F("bytes :-"));
             
             for (size_t i = 0; i < buffer2_count; i++) {
-                Serial.print(buffer2[i].timestamp);
                 for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
                     Serial.print(F(" "));
                     Serial.print(buffer2[i].values[j]);
                 }
-                Serial.println(F("|"));
+                Serial.println(F(" |"));
             }
         }
     }

@@ -1,8 +1,8 @@
 /**
  * @file compressor.cpp
- * @brief Compresses timestamped register readings with a header for transmission.
+ * @brief Compresses register readings with a header for transmission.
  *
- * Uses delta and run-length encoding for timestamps and register values.
+ * Uses delta and run-length encoding for register values.
  * Adds a 5-byte header with sample count(2bytes), register count(1byte), and compressed length(2bytes).
  * Logs errors if compression exceeds buffer limits.
  *
@@ -19,43 +19,7 @@ size_t compress_buffer_with_header(const register_reading_t* buffer, size_t coun
 
     if (count == 0) return 0;
 
-    // --- Compress timestamps ---
-    unsigned long prev_ts = buffer[0].timestamp;
-    size_t run = 0;
     size_t temp_index = 0;
-
-    // store first timestamp absolute
-    temp[temp_index++] = (prev_ts >> 24) & 0xFF;
-    temp[temp_index++] = (prev_ts >> 16) & 0xFF;
-    temp[temp_index++] = (prev_ts >> 8) & 0xFF;
-    temp[temp_index++] = prev_ts & 0xFF;
-
-    for (size_t i = 1; i < count; i++) {
-        long delta = (long)(buffer[i].timestamp - prev_ts);
-        prev_ts = buffer[i].timestamp;
-
-        if (delta == 0) {
-            run++;
-            if (run == 255) {
-                temp[temp_index++] = 0;
-                temp[temp_index++] = run;
-                run = 0;
-            }
-        } else {
-            if (run > 0) {
-                temp[temp_index++] = 0;
-                temp[temp_index++] = run;
-                run = 0;
-            }
-            temp[temp_index++] = 1;
-            temp[temp_index++] = (uint8_t)((delta >> 8) & 0xFF);
-            temp[temp_index++] = (uint8_t)(delta & 0xFF);
-        }
-    }
-    if (run > 0) {
-        temp[temp_index++] = 0;
-        temp[temp_index++] = run;
-    }
 
     // --- Compress register values ---
     for (size_t reg = 0; reg < READ_REGISTER_COUNT; reg++) {
@@ -63,7 +27,7 @@ size_t compress_buffer_with_header(const register_reading_t* buffer, size_t coun
         temp[temp_index++] = (uint8_t)(prev_val >> 8);
         temp[temp_index++] = (uint8_t)(prev_val & 0xFF);
 
-        run = 0;
+        size_t run = 0;
         for (size_t i = 1; i < count; i++) {
             int16_t delta = (int16_t)(buffer[i].values[reg] - prev_val);
             prev_val = buffer[i].values[reg];

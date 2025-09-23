@@ -24,7 +24,7 @@ typedef struct {
 // Circular buffer for storing readings
 typedef struct {
     uint16_t values[READ_REGISTER_COUNT];
-    unsigned long timestamp;
+    // unsigned long timestamp;
 } register_reading_t;
 
 // Scheduler functions
