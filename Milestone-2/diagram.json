@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "editor": "wokwi",
-  "parts": [
-    { "type": "board-esp32-devkit-c-v4", "id": "esp1", "top": 2.31, "left": -80.21, "attrs": {} }
-  ],
-  "connections": [],
-  "dependencies": {}
-}

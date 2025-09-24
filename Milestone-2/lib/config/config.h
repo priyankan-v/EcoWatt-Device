@@ -15,7 +15,7 @@
 #define API_KEY "NjhhZWIwNDU1ZDdmMzg3MzNiMTQ5YWQzOjY4YWViMDQ1NWQ3ZjM4NzMzYjE0OWFjOQ=="
 
 // Cloud Upload API Configuration
-#define UPLOAD_API_BASE_URL "http://127.0.0.1:8080/"
+#define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app"
 #define UPLOAD_API_KEY "ColdPlay2025"
 
 // HTTP configuration
@@ -40,18 +40,25 @@
 #define MIN_EXPORT_POWER 0
 #define MAX_EXPORT_POWER 100
 
+// Read registers array
+#define READ_REGISTER_COUNT 10 
+extern const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT];
+
 // System configuration
 #define SERIAL_BAUD_RATE 115200
 #define MEMORY_BUFFER_SIZE (UPLOAD_INTERVAL_MS / POLL_INTERVAL_MS)
 #define MAX_COMPRESSION_SIZE (MEMORY_BUFFER_SIZE * 2 * READ_REGISTER_COUNT)
 #define MAX_COMPRESSION_RETRIES 3 // Maximum number of compression retries
+#define MAX_PAYLOAD_SIZE 100 // Maximum allowed payload size before using aggregation
+
+// Buffer behavior configuration
+#define BUFFER_FULL_BEHAVIOR_CIRCULAR 1  // Option A: Overwrite oldest data (circular buffer)
+#define BUFFER_FULL_BEHAVIOR_STOP 0     // Option B: Stop new acquisitions until space is free
+#define BUFFER_FULL_BEHAVIOR BUFFER_FULL_BEHAVIOR_STOP  // Choose behavior when buffer is full
 
 // Register gains (stored in PROGMEM)
 extern const PROGMEM float REGISTER_GAINS[MAX_REGISTERS];
 extern const PROGMEM char* REGISTER_UNITS[MAX_REGISTERS];
 
-// Read registers array
-#define READ_REGISTER_COUNT 10 
-extern const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT];
 
 #endif
