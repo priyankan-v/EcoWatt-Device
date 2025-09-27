@@ -5,7 +5,7 @@
 
 bool validate_upload_response(const String& response);
 void encrypt_compressed_frame(const uint8_t* data, size_t len, uint8_t* output_data);
-void calculate_mac(const uint8_t* data, size_t len, uint8_t* mac_output);
+void calculate_and_add_mac(const uint8_t* data, size_t len, uint8_t* mac_output);
 void append_crc_to_upload_frame(const uint8_t* encrypted_frame, size_t frame_length, uint8_t* output_frame);
 
 #endif

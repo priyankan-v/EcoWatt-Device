@@ -47,40 +47,35 @@ void encrypt_compressed_frame(const uint8_t* data, size_t len, uint8_t* output_d
     // 4. Prepend IV to encrypted data
 }
 
-void calculate_mac(const uint8_t* data, size_t len, uint8_t* mac_output) {
-    // Placeholder MAC calculation - HMAC-SHA256 would be implemented here
-    // For production: implement HMAC-SHA256 with shared secret key
-    
-    Serial.print(F("[MAC STUB] Calculating MAC for "));
-    Serial.print(len);
-    Serial.println(F(" bytes"));
-    
-    // Placeholder MAC (would be 32 bytes for HMAC-SHA256)
-    // For now, just fill with pattern for demonstration
-    for (size_t i = 0; i < 8; i++) { // 8-byte placeholder MAC
+void calculate_and_add_mac(const uint8_t* data, size_t len, uint8_t* mac_output) {
+    // Placeholder MAC calculation - real HMAC-SHA256 will be implemented later
+    // For production:
+    //  1. Load shared secret key
+    //  2. Calculate HMAC-SHA256(key, data, len)
+    //  3. Truncate result to required length (e.g., 8 or 16 bytes)
+
+    // Stub: Generate deterministic but fake MAC for testing
+    for (size_t i = 0; i < 8; i++) {
         mac_output[i] = (uint8_t)(0xAA ^ (i * 0x11));
     }
-    
-    // Placeholder: In production, this would:
-    // 1. Use stored HMAC key
-    // 2. Calculate HMAC-SHA256(key, data)
-    // 3. Return first 8-16 bytes of HMAC
-}
 
-void append_crc_to_upload_frame(const uint8_t* encrypted_frame, size_t frame_length, uint8_t* output_frame) {
-    memcpy(output_frame, encrypted_frame, frame_length);
-    
-    // Placeholder: Calculate MAC (in production, this would be appended before CRC)
-    uint8_t mac[8]; // Placeholder MAC size
-    calculate_mac(encrypted_frame, frame_length, mac);
-    
-    Serial.print(F("[SECURITY] MAC calculated: "));
+    // Debug logs
+    Serial.print(F("[SECURITY] MAC stub calculated for "));
+    Serial.print(len);
+    Serial.println(F(" bytes"));
+
+    Serial.print(F("[SECURITY] MAC: "));
     for (size_t i = 0; i < 8; i++) {
-        Serial.print(mac[i], HEX);
+        Serial.print(mac_output[i], HEX);
         Serial.print(" ");
     }
     Serial.println();
-    
+}
+
+
+void append_crc_to_upload_frame(const uint8_t* encrypted_frame, size_t frame_length, uint8_t* output_frame) {
+    memcpy(output_frame, encrypted_frame, frame_length);
+        
     // Calculate CRC (in production, CRC would cover encrypted_data + MAC)
     uint16_t crc = calculateCRC(encrypted_frame, frame_length);
     

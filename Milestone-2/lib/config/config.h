@@ -47,9 +47,12 @@ extern const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT];
 // System configuration
 #define SERIAL_BAUD_RATE 115200
 #define MEMORY_BUFFER_SIZE (UPLOAD_INTERVAL_MS / POLL_INTERVAL_MS)
-#define MAX_COMPRESSION_SIZE (MEMORY_BUFFER_SIZE * 2 * READ_REGISTER_COUNT)
+
+// Compression configuration
+#define MAX_COMPRESSION_SIZE (MEMORY_BUFFER_SIZE * 2 * READ_REGISTER_COUNT + 5)
 #define MAX_COMPRESSION_RETRIES 3 // Maximum number of compression retries
-#define MAX_PAYLOAD_SIZE 100 // Maximum allowed payload size before using aggregation
+#define MAX_PAYLOAD_SIZE 200 // Maximum allowed payload size before using aggregation
+#define AGG_WINDOW 10 // Samples per aggregation window
 
 // Buffer behavior configuration
 #define BUFFER_FULL_BEHAVIOR_CIRCULAR 1  // Option A: Overwrite oldest data (circular buffer)

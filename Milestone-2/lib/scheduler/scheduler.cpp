@@ -49,12 +49,7 @@ void scheduler_run(void) {
                     execute_write_task();
                     break;
                 case TASK_UPLOAD_DATA:
-                    // Serial.print(F("Current Time: "));
-                    // Serial.println(millis());
                     execute_upload_task();
-                    // Serial.print(F("Upload Task Executed at: "));
-                    // Serial.println(millis());
-                    // Serial.println();
                     break;
                 default:
                     break;
@@ -103,7 +98,7 @@ void store_register_reading(const uint16_t* values, size_t count) {
 
     // Advance write index (circular buffer)
     buffer_write_index = (buffer_write_index + 1) % MEMORY_BUFFER_SIZE;
-    
+
     // Track buffer usage
     if (!buffer_full) {
         buffer_count++;
@@ -117,7 +112,7 @@ void store_register_reading(const uint16_t* values, size_t count) {
         }
     }
 
-    if (buffer_count % 10 == 0 || buffer_full) {  // Log every 10 samples or when full
+    if (buffer_count % MEMORY_BUFFER_SIZE == 0 || buffer_full) {  // Log every (MEMORY_BUFFER_SIZE) samples or when full
         Serial.print(F("[BUFFER] Samples: "));
         Serial.print(buffer_count);
         Serial.print(F("/"));
@@ -130,6 +125,13 @@ void store_register_reading(const uint16_t* values, size_t count) {
             Serial.print(F(", behavior: STOP"));
         #endif
         Serial.println(F(")"));
+        for (size_t i = 0; i < buffer_count; i++) {
+                for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
+                    Serial.print(F(" "));
+                    Serial.print(buffer[i].values[j]);
+                }
+                Serial.println(F(" |"));
+            }
     }
 }
 
@@ -138,8 +140,7 @@ void execute_read_task(void) {
     // Serial.println(F("Executing read task..."));
     
     // Generate read frame
-    String frame = format_request_frame(SLAVE_ADDRESS, FUNCTION_CODE_READ, 
-                                       pgm_read_word(&READ_REGISTERS[0]), READ_REGISTER_COUNT);
+    String frame = format_request_frame(SLAVE_ADDRESS, FUNCTION_CODE_READ, pgm_read_word(&READ_REGISTERS[0]), READ_REGISTER_COUNT);
     frame = append_crc_to_frame(frame);
     
     String url;
@@ -223,11 +224,14 @@ void execute_write_task(void) {
 }
 
 void execute_upload_task(void) {
+    upload_in_progress = true;  // Prevent buffer filling during upload
+
     bool use_aggregation = false;
     
     // Check if we have data to upload
     if (buffer_count == 0) {
-        Serial.println(F("[UPLOAD] No data to upload"));
+        Serial.println(F("[COMPRESSION] No data to compress and upload"));
+        upload_in_progress = false;  // Re-enable filling
         return;
     }
     
@@ -255,12 +259,15 @@ void execute_upload_task(void) {
     
     // WORKFLOW STEP 2: Compress + packetize
     Serial.println(F("[WORKFLOW] Compress + packetize"));
+
     if (!attempt_compression(buffer, &buffer_count)) {
-        upload_in_progress = false;  // Re-enable filling on failure
+        memset(compressed_data, 0, sizeof(compressed_data));
+        compressed_data_len = 0;
         upload_retry_count++;
         last_upload_attempt = current_time;
         Serial.print(F("[UPLOAD] Compression failed - retry count: "));
         Serial.println(upload_retry_count);
+        upload_in_progress = false;  // Re-enable filling on failure
         return;
     }
     
@@ -271,78 +278,76 @@ void execute_upload_task(void) {
         Serial.print(F(" bytes) exceeds limit ("));
         Serial.print(MAX_PAYLOAD_SIZE);
         Serial.println(F(" bytes). Using aggregation..."));
+        use_aggregation = true;
         
-        // Use aggregation instead
-        if (create_aggregated_payload(buffer, buffer_count, compressed_data, &compressed_data_len)) {
-            use_aggregation = true;
-            // DON'T clear buffer here - wait for successful ACK from cloud
-        } else {
-            log_error(ERROR_COMPRESSION_FAILED, "Aggregation failed");
-            upload_in_progress = false;  // Re-enable filling on failure
+        size_t aggregated_count = 0;
+        register_reading_t* aggregated_buffer = NULL;
+        aggregated_count = aggregate_buffer_avg(buffer, buffer_count, &aggregated_buffer);
+
+        if (!attempt_compression(aggregated_buffer, &aggregated_count)) {
+            memset(compressed_data, 0, sizeof(compressed_data));
+            compressed_data_len = 0;
             upload_retry_count++;
             last_upload_attempt = current_time;
-            Serial.print(F("[UPLOAD] Aggregation failed - retry count: "));
+            Serial.print(F("[UPLOAD] Aggregated Compression failed - retry count: "));
             Serial.println(upload_retry_count);
+            free(aggregated_buffer);
+            upload_in_progress = false;  // Re-enable filling on failure
             return;
         }
     }
 
-    if (compressed_data_len >= 5) {
-        // Prepare metadata for cloud decompression
-        uint8_t metadata_frame[32]; // Metadata header
-        size_t metadata_len = 0;
-        
-        // Metadata Header (12 bytes minimum)
-        metadata_frame[metadata_len++] = use_aggregation ? 0x02 : 0x00; // Method: 0x00=Compression, 0x02=Aggregation
-        metadata_frame[metadata_len++] = (uint8_t)((buffer_count >> 8) & 0xFF); // Original sample count high
-        metadata_frame[metadata_len++] = (uint8_t)(buffer_count & 0xFF); // Original sample count low
-        metadata_frame[metadata_len++] = READ_REGISTER_COUNT; // Number of registers
-        
-        size_t original_size = buffer_count * sizeof(register_reading_t);
-        metadata_frame[metadata_len++] = (uint8_t)((original_size >> 24) & 0xFF); // Original size (4 bytes)
-        metadata_frame[metadata_len++] = (uint8_t)((original_size >> 16) & 0xFF);
-        metadata_frame[metadata_len++] = (uint8_t)((original_size >> 8) & 0xFF);
-        metadata_frame[metadata_len++] = (uint8_t)(original_size & 0xFF);
-        
-        metadata_frame[metadata_len++] = (uint8_t)((compressed_data_len >> 8) & 0xFF); // Compressed size high
-        metadata_frame[metadata_len++] = (uint8_t)(compressed_data_len & 0xFF); // Compressed size low
-        
-        uint16_t compression_ratio_percent = (uint16_t)((compressed_data_len * 100) / original_size);
-        metadata_frame[metadata_len++] = (uint8_t)((compression_ratio_percent >> 8) & 0xFF); // Compression ratio high
-        metadata_frame[metadata_len++] = (uint8_t)(compression_ratio_percent & 0xFF); // Compression ratio low
+    if (compressed_data_len >= 5 && compressed_data_len <= MAX_PAYLOAD_SIZE) {
         
         Serial.print(F("[UPLOAD] Method: "));
-        Serial.print(use_aggregation ? F("AGGREGATION") : F("COMPRESSION"));
+        Serial.print(use_aggregation ? F("AGGREGATED COMPRESSION") : F("RAW COMPRESSION"));
         Serial.print(F(", Original: "));
-        Serial.print(original_size);
+        Serial.print(buffer_count * READ_REGISTER_COUNT * sizeof(uint16_t));
         Serial.print(F(" bytes, Final: "));
         Serial.print(compressed_data_len);
         Serial.print(F(" bytes, Ratio: "));
-        Serial.print(compression_ratio_percent);
+        Serial.print(((float)(buffer_count * READ_REGISTER_COUNT * sizeof(uint16_t))) / compressed_data_len, 2);
         Serial.println(F("%"));
 
         // Create final upload frame: [metadata][compressed_data]
-        uint8_t final_upload_frame[MAX_COMPRESSION_SIZE + 32];
-        size_t final_frame_len = 0;
+        uint8_t compressed_data_frame[compressed_data_len + 1];
+        if (use_aggregation) {
+            // Indicate aggregated in header
+            compressed_data_frame[0] = 0x01; // Aggregated flag
+        } else {
+            compressed_data_frame[0] = 0x00; // Raw flag
+        }
         
         // Copy metadata
-        memcpy(final_upload_frame, metadata_frame, metadata_len);
-        final_frame_len += metadata_len;
-        
-        // Copy compressed data
-        memcpy(final_upload_frame + metadata_len, compressed_data, compressed_data_len);
-        final_frame_len += compressed_data_len;
+        memcpy(compressed_data_frame + 1, compressed_data, compressed_data_len);
+
+        for (size_t i = 0; i < compressed_data_len + 1; i++) {
+            Serial.print(F(" "));
+            Serial.print(compressed_data_frame[i]);
+        }
+        Serial.println();
+        /*
+        // Encrypt the frame
+        uint8_t encrypted_frame_len = 16 + ((compressed_data_len + 15) / 16) * 16; // AES block size alignment
+        uint8_t encrypted_frame[encrypted_frame_len];
+        // memset(encrypted_frame, 0, encrypted_frame_len);
+        encrypt_compressed_frame(compressed_data_frame, compressed_data_len + 1, encrypted_frame); 
+
+        // Add MAC 
+        uint8_t encrypted_frame_with_mac[encrypted_frame_len + 8];
+        memcpy(encrypted_frame_with_mac, encrypted_frame, encrypted_frame_len);
+        calculate_and_add_mac(encrypted_frame, encrypted_frame_len, encrypted_frame_with_mac + encrypted_frame_len);
+        */
         
         // Add CRC for entire frame
-        uint8_t upload_frame_with_crc[MAX_COMPRESSION_SIZE + 34]; // metadata + data + CRC
-        append_crc_to_upload_frame(final_upload_frame, final_frame_len, upload_frame_with_crc);
+        uint8_t upload_frame_with_crc[compressed_data_len + 3]; // metadata + data + CRC
+        append_crc_to_upload_frame(compressed_data_frame, compressed_data_len + 1, upload_frame_with_crc);
         
-        Serial.print(F("[UPLOAD] Final frame: metadata("));
-        Serial.print(metadata_len);
-        Serial.print(F(") + data("));
-        Serial.print(compressed_data_len);
+        Serial.print(F("[UPLOAD] Final frame:"));
+        Serial.print(F("data("));
+        Serial.print(compressed_data_len + 1);
         Serial.print(F(") + crc(2) = "));
-        Serial.print(final_frame_len + 2);
+        Serial.print(compressed_data_len + 3);
         Serial.println(F(" bytes total"));
 
         String url;
@@ -351,18 +356,13 @@ void execute_upload_task(void) {
         url += "/api/cloud/write";
         String method = "POST";
         String api_key = UPLOAD_API_KEY;
-        
-        Serial.print(F("[UPLOAD] Sending to: "));
-        Serial.println(url);
-        
-        // WORKFLOW STEP 3: Upload to cloud
-        Serial.println(F("[WORKFLOW] Upload to cloud"));
-        String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, final_frame_len + 2);
+
+        String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, compressed_data_len + 3);
         
         if (response.length() > 0) {
             if (validate_upload_response(response)) {
                 Serial.print(F("[UPLOAD] Success: "));
-                Serial.print(compressed_data_len + 2);
+                Serial.print(compressed_data_len + 3);
                 Serial.println(F(" bytes uploaded"));
                 
                 // WORKFLOW STEP 4: After successful ACK from cloud → clear buffer
@@ -417,13 +417,11 @@ void execute_upload_task(void) {
 bool attempt_compression(register_reading_t* buffer, size_t* buffer_count) {
     int retry_count = 0;
     while (retry_count < MAX_COMPRESSION_RETRIES) {
-        compression_metrics_t metrics = compress_with_benchmark(buffer, *buffer_count, compressed_data);
+        compression_metrics_t metrics = compress_raw(buffer, *buffer_count, compressed_data);
         compressed_data_len = metrics.compressed_payload_size;
 
         if (compressed_data_len >= 5) {
-            Serial.println(F("[COMPRESSION] Buffer compressed successfully"));
-            // DON'T clear buffer here - wait for successful ACK from cloud
-            // Buffer will be cleared in execute_upload_task after successful upload
+            Serial.println(F("[COMPRESSION] Raw buffer compressed successfully"));
             return true;
         } else {
             retry_count++;
@@ -444,100 +442,29 @@ void init_tasks_last_run(unsigned long start_time) {
     }
 }
 
-// Calculate aggregation (min/max/avg) from buffer data
-void calculate_aggregation(register_reading_t* buffer, size_t count, aggregated_data_t* agg_data) {
-    if (count == 0 || !agg_data) return;
-    
-    Serial.print(F("[AGGREGATION] Processing "));
-    Serial.print(count);
-    Serial.println(F(" samples"));
-    
-    // Initialize aggregation data
-    agg_data->sample_count = count;
-    for (size_t i = 0; i < READ_REGISTER_COUNT; i++) {
-        agg_data->min_values[i] = 0xFFFF;  // Max uint16_t
-        agg_data->max_values[i] = 0;
-        agg_data->sum_values[i] = 0;
-        agg_data->avg_values[i] = 0;
-    }
-    
-    // Process all samples
-    for (size_t sample = 0; sample < count; sample++) {
-        for (size_t reg = 0; reg < READ_REGISTER_COUNT; reg++) {
-            uint16_t value = buffer[sample].values[reg];
-            
-            // Update min/max
-            if (value < agg_data->min_values[reg]) {
-                agg_data->min_values[reg] = value;
-            }
-            if (value > agg_data->max_values[reg]) {
-                agg_data->max_values[reg] = value;
-            }
-            
-            // Accumulate sum for average
-            agg_data->sum_values[reg] += value;
-        }
-    }
-    
-    // Calculate averages
-    for (size_t reg = 0; reg < READ_REGISTER_COUNT; reg++) {
-        agg_data->avg_values[reg] = (uint16_t)(agg_data->sum_values[reg] / count);
-        
-        Serial.print(F("R"));
-        Serial.print(reg);
-        Serial.print(F(" Min:"));
-        Serial.print(agg_data->min_values[reg]);
-        Serial.print(F(" Avg:"));
-        Serial.print(agg_data->avg_values[reg]);
-        Serial.print(F(" Max:"));
-        Serial.print(agg_data->max_values[reg]);
-        Serial.println();
-    }
-}
+size_t aggregate_buffer_avg(const register_reading_t* buffer, size_t count, register_reading_t** out_buffer) {
+    size_t agg_count = (count + AGG_WINDOW - 1) / AGG_WINDOW;
 
-// Create aggregated payload when compression exceeds limits
-bool create_aggregated_payload(register_reading_t* buffer, size_t count, uint8_t* output, size_t* output_len) {
-    if (!buffer || !output || !output_len || count == 0) {
-        Serial.println(F("[AGGREGATION] Invalid parameters"));
-        return false;
+    register_reading_t* agg_buffer = (register_reading_t*)malloc(agg_count * sizeof(register_reading_t));
+    if (!agg_buffer) return 0;
+
+    size_t agg_idx = 0;
+    for (size_t i = 0; i < count; i += AGG_WINDOW) {
+        for (size_t reg = 0; reg < READ_REGISTER_COUNT; reg++) {
+            uint32_t sum = 0;
+            size_t actual = 0;
+
+            for (size_t j = i; j < i + AGG_WINDOW && j < count; j++) {
+                sum += buffer[j].values[reg];
+                actual++;
+            }
+
+            uint16_t avg_val = (uint16_t)(sum / actual);
+            agg_buffer[agg_idx].values[reg] = avg_val;
+        }
+        agg_idx++;
     }
-    
-    aggregated_data_t agg_data;
-    calculate_aggregation(buffer, count, &agg_data);
-    
-    size_t index = 0;
-    
-    // Header (5 bytes): [0x01][sample_count_low][sample_count_high][register_count][values_per_register]
-    output[index++] = 0x01;  // Aggregation marker
-    output[index++] = (uint8_t)(count & 0xFF);  // Sample count low byte
-    output[index++] = (uint8_t)((count >> 8) & 0xFF);  // Sample count high byte
-    output[index++] = READ_REGISTER_COUNT;  // Register count
-    output[index++] = 3;  // Values per register (min, avg, max)
-    
-    // Data (6 bytes per register): [min_low][min_high][avg_low][avg_high][max_low][max_high]
-    for (size_t reg = 0; reg < READ_REGISTER_COUNT; reg++) {
-        // Min value (2 bytes)
-        output[index++] = (uint8_t)(agg_data.min_values[reg] & 0xFF);
-        output[index++] = (uint8_t)((agg_data.min_values[reg] >> 8) & 0xFF);
-        
-        // Avg value (2 bytes)
-        output[index++] = (uint8_t)(agg_data.avg_values[reg] & 0xFF);
-        output[index++] = (uint8_t)((agg_data.avg_values[reg] >> 8) & 0xFF);
-        
-        // Max value (2 bytes)
-        output[index++] = (uint8_t)(agg_data.max_values[reg] & 0xFF);
-        output[index++] = (uint8_t)((agg_data.max_values[reg] >> 8) & 0xFF);
-    }
-    
-    *output_len = index;
-    
-    Serial.print(F("[AGGREGATION] Created payload: "));
-    Serial.print(*output_len);
-    Serial.print(F(" bytes ("));
-    Serial.print(count);
-    Serial.print(F(" samples -> "));
-    Serial.print(READ_REGISTER_COUNT);
-    Serial.println(F(" aggregated registers)"));
-    
-    return true;
+
+    *out_buffer = agg_buffer;
+    return agg_count;
 }
