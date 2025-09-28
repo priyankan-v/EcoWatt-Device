@@ -11,7 +11,7 @@ typedef struct {
     size_t original_payload_size;
     size_t compressed_payload_size;
     float compression_ratio;
-    unsigned long cpu_time_ms;
+    unsigned long cpu_time_us;
 } compression_metrics_t;
 
 

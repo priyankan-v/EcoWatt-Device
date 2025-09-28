@@ -24,6 +24,7 @@ static int upload_retry_count = 0;  // Track retry attempts
 
 uint8_t compressed_data[MAX_COMPRESSION_SIZE] = {0}; // Output buffer for compression
 size_t compressed_data_len = 0; // Length of compressed data
+compression_metrics_t compression_metrics = {0}; // Metrics of last compression
 
 // PROGMEM data definitions
 const PROGMEM float REGISTER_GAINS[MAX_REGISTERS] = {10.0, 10.0, 100.0, 10.0, 10.0, 10.0, 10.0, 10.0, 1.0, 1.0};
@@ -120,18 +121,18 @@ void store_register_reading(const uint16_t* values, size_t count) {
         Serial.print(F(" (write_index: "));
         Serial.print(buffer_write_index);
         #if BUFFER_FULL_BEHAVIOR == BUFFER_FULL_BEHAVIOR_CIRCULAR
-            Serial.print(F(", behavior: CIRCULAR"));
+            Serial.println(F(", behavior: CIRCULAR"));
         #elif BUFFER_FULL_BEHAVIOR == BUFFER_FULL_BEHAVIOR_STOP
-            Serial.print(F(", behavior: STOP"));
+            Serial.println(F(", behavior: STOP"));
         #endif
-        Serial.println(F(")"));
-        for (size_t i = 0; i < buffer_count; i++) {
-                for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
-                    Serial.print(F(" "));
-                    Serial.print(buffer[i].values[j]);
-                }
-                Serial.println(F(" |"));
-            }
+        // Serial.println(F(")"));
+        // for (size_t i = 0; i < buffer_count; i++) {
+        //         for (size_t j = 0; j < READ_REGISTER_COUNT; j++) {
+        //             Serial.print(buffer[i].values[j]);
+        //             Serial.print(F(" "));
+        //         }
+        //         Serial.println(F("|"));
+        //     }
     }
 }
 
@@ -160,22 +161,19 @@ void execute_read_task(void) {
             store_register_reading(read_values, actual_count);
             
             // Display processed values
-            // Serial.println(F("Register values:"));
-            // Serial.print(F("T:"));
-            // Serial.print(epochNow()); // Print current epoch time
-            // for (size_t i = 0; i < actual_count; i++) {
-            //     float gain = pgm_read_float(&REGISTER_GAINS[i]);
-            //     const char* unit = (const char*)pgm_read_ptr(&REGISTER_UNITS[i]);
-            //     float processed_value = read_values[i] / gain;
+            for (size_t i = 0; i < actual_count; i++) {
+                float gain = pgm_read_float(&REGISTER_GAINS[i]);
+                const char* unit = (const char*)pgm_read_ptr(&REGISTER_UNITS[i]);
+                float processed_value = read_values[i] / gain;
                 
-            //     Serial.print(F(" R"));
-            //     Serial.print(i);
-            //     Serial.print(F(":"));
-            //     Serial.print(processed_value);
-            //     // Serial.print(F(""));
-            //     Serial.print(unit);
-            // }
-            // Serial.println();
+                Serial.print(F("R"));
+                Serial.print(i);
+                Serial.print(F(":"));
+                Serial.print(processed_value);
+                Serial.print(unit);
+                Serial.print(F(" "));
+            }
+            Serial.println();
             
             reset_error_state();
         }
@@ -262,6 +260,7 @@ void execute_upload_task(void) {
 
     if (!attempt_compression(buffer, &buffer_count)) {
         memset(compressed_data, 0, sizeof(compressed_data));
+        memset(&compression_metrics, 0, sizeof(compression_metrics));
         compressed_data_len = 0;
         upload_retry_count++;
         last_upload_attempt = current_time;
@@ -285,6 +284,7 @@ void execute_upload_task(void) {
         aggregated_count = aggregate_buffer_avg(buffer, buffer_count, &aggregated_buffer);
 
         if (!attempt_compression(aggregated_buffer, &aggregated_count)) {
+            memset(&compression_metrics, 0, sizeof(compression_metrics));
             memset(compressed_data, 0, sizeof(compressed_data));
             compressed_data_len = 0;
             upload_retry_count++;
@@ -302,12 +302,11 @@ void execute_upload_task(void) {
         Serial.print(F("[UPLOAD] Method: "));
         Serial.print(use_aggregation ? F("AGGREGATED COMPRESSION") : F("RAW COMPRESSION"));
         Serial.print(F(", Original: "));
-        Serial.print(buffer_count * READ_REGISTER_COUNT * sizeof(uint16_t));
+        Serial.print(compression_metrics.original_payload_size);
         Serial.print(F(" bytes, Final: "));
-        Serial.print(compressed_data_len);
+        Serial.print(compression_metrics.compressed_payload_size);
         Serial.print(F(" bytes, Ratio: "));
-        Serial.print(((float)(buffer_count * READ_REGISTER_COUNT * sizeof(uint16_t))) / compressed_data_len, 2);
-        Serial.println(F("%"));
+        Serial.println(compression_metrics.compression_ratio);
 
         // Create final upload frame: [metadata][compressed_data]
         uint8_t compressed_data_frame[compressed_data_len + 1];
@@ -321,9 +320,10 @@ void execute_upload_task(void) {
         // Copy metadata
         memcpy(compressed_data_frame + 1, compressed_data, compressed_data_len);
 
+        Serial.println(F("[UPLOAD] Compressed data frame:"));
         for (size_t i = 0; i < compressed_data_len + 1; i++) {
-            Serial.print(F(" "));
             Serial.print(compressed_data_frame[i]);
+            Serial.print(F(" "));
         }
         Serial.println();
         /*
@@ -408,8 +408,11 @@ void execute_upload_task(void) {
 bool attempt_compression(register_reading_t* buffer, size_t* buffer_count) {
     int retry_count = 0;
     while (retry_count < MAX_COMPRESSION_RETRIES) {
-        compression_metrics_t metrics = compress_raw(buffer, *buffer_count, compressed_data);
-        compressed_data_len = metrics.compressed_payload_size;
+        compression_metrics = compress_raw(buffer, *buffer_count, compressed_data);
+        compressed_data_len = compression_metrics.compressed_payload_size;
+        Serial.print(F("[COMPRESSION] Time: "));
+        Serial.print(compression_metrics.cpu_time_us);
+        Serial.println(F(" us"));
 
         if (compressed_data_len >= 5) {
             Serial.println(F("[COMPRESSION] Raw buffer compressed successfully"));
