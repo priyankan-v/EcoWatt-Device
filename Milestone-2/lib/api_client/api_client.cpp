@@ -1,6 +1,7 @@
 #include "api_client.h"
 #include "config.h"
 #include "error_handler.h"
+#include "cloudAPI_handler.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 
@@ -84,6 +85,7 @@ String upload_api_send_request(const String& url, const String& method, const St
 
     HTTPClient http;
 
+    Serial.println(url);
     // Begin the HTTP request
     http.begin(url);
     http.setTimeout(HTTP_TIMEOUT_MS);
@@ -102,25 +104,12 @@ String upload_api_send_request(const String& url, const String& method, const St
     if (http_code == HTTP_CODE_OK) {
         String response = http.getString();
 
-        // Parse JSON response more robustly
-        int start = response.indexOf(F("\"frame\":\""));
-        if (start >= 0) {
-            start += 9; // Length of "\"frame\":\""
-            int end = response.indexOf('\"', start);
-
-            if (end > start) {
-                String frame_hex = response.substring(start, end);
-                http.end();
-
-                // Basic validation of hex string
-                if (frame_hex.length() > 0 && frame_hex.length() % 2 == 0) {
-                    return frame_hex;
-                } else {
-                    log_error(ERROR_INVALID_RESPONSE, "Invalid frame format in response");
-                }
-            }
+        // Use cloud API response validation for upload endpoints
+        if (validate_upload_response(response)) {
+            http.end();
+            return "success"; // Return success indicator
         } else {
-            log_error(ERROR_INVALID_RESPONSE, "Frame not found in response");
+            log_error(ERROR_INVALID_RESPONSE, "Upload response validation failed");
         }
     } else if (http_code > 0) {
         char error_msg[64];

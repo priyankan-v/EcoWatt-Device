@@ -353,20 +353,19 @@ void execute_upload_task(void) {
         String url;
         url.reserve(128);
         url = UPLOAD_API_BASE_URL;
-        url += "/api/cloud/write";
+        // url += "/api/cloud/write";
         String method = "POST";
         String api_key = UPLOAD_API_KEY;
 
         String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, compressed_data_len + 3);
         
         if (response.length() > 0) {
-            if (validate_upload_response(response)) {
-                Serial.print(F("[UPLOAD] Success: "));
-                Serial.print(compressed_data_len + 3);
-                Serial.println(F(" bytes uploaded"));
-                
-                // WORKFLOW STEP 4: After successful ACK from cloud → clear buffer
-                Serial.println(F("[WORKFLOW] Successful ACK → clear buffer"));
+            Serial.print(F("[UPLOAD] Success: "));
+            Serial.print(compressed_data_len + 3);
+            Serial.println(F(" bytes uploaded"));
+            
+            // WORKFLOW STEP 4: After successful ACK from cloud → clear buffer
+            Serial.println(F("[WORKFLOW] Successful ACK → clear buffer"));
                 buffer_count = 0;
                 buffer_write_index = 0;
                 buffer_full = false;
@@ -381,14 +380,6 @@ void execute_upload_task(void) {
                 Serial.println(F("[WORKFLOW] Buffer free for next cycle"));
                 
                 reset_error_state();
-            } else {
-                log_error(ERROR_HTTP_FAILED, "Upload response validation failed");
-                upload_in_progress = false;  // Re-enable filling on validation failure
-                upload_retry_count++;
-                last_upload_attempt = current_time;
-                Serial.print(F("[UPLOAD] Validation failed - retry count: "));
-                Serial.println(upload_retry_count);
-            }
         } else {
             // No response - upload failed
             Serial.println(F("[UPLOAD] Failed - no response from cloud"));

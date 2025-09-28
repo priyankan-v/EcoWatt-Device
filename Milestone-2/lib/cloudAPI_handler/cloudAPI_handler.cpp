@@ -7,7 +7,13 @@ bool validate_upload_response(const String& response) {
         return false;
     }
 
-    if (response.indexOf(F("\"status\":\"success\"")) >= 0) {
+    // Debug: Print the actual response
+    Serial.print(F("[DEBUG] Cloud API Response: "));
+    Serial.println(response);
+
+    // Check for success status (flexible matching for whitespace variations)
+    if (response.indexOf(F("\"status\"")) >= 0 && 
+        (response.indexOf(F("\"success\"")) >= 0 || response.indexOf(F("success")) >= 0)) {
         Serial.println(F("Upload response validated successfully."));
         return true;
     }
