@@ -19,8 +19,8 @@ bool checkCRC(const String& responseFrame) {
     uint16_t calculatedCRC = calculateCRC(responseBytes, frameLength - 2); 
 
     Serial.print("Calculated CRC: ");
-    Serial.println(calculatedCRC, HEX);
-    Serial.print("Received CRC: ");
+    Serial.print(calculatedCRC, HEX);
+    Serial.print(" | Received CRC: ");
     Serial.println(receivedCRC, HEX);
 
     return calculatedCRC == receivedCRC;

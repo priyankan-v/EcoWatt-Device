@@ -2,6 +2,7 @@
 #define COMPRESSOR_H
 #include <Arduino.h>
 #include "scheduler.h"  // Include your register_reading_t and buffers
+#include "error_handler.h"  // For log_error
 
 // Compression metrics structure for benchmark reporting
 typedef struct {
@@ -10,13 +11,11 @@ typedef struct {
     size_t original_payload_size;
     size_t compressed_payload_size;
     float compression_ratio;
-    uint32_t cpu_time_us;
-    bool lossless_recovery_verified;
+    unsigned long cpu_time_ms;
 } compression_metrics_t;
 
-// Compression functions
-compression_metrics_t compress_with_benchmark(const register_reading_t* buffer, size_t count, uint8_t* output);
-bool verify_lossless_recovery(const register_reading_t* original, size_t count, const uint8_t* compressed);
 
+// Compression functions
+compression_metrics_t compress_raw(const register_reading_t* buffer, size_t count, uint8_t* output);
 
 #endif // COMPRESSOR_H
