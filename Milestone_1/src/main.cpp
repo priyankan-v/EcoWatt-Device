@@ -24,7 +24,7 @@ int main() {
     while (true) {
         std::cout << "Idle started\n";
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
-        std::cout << "[Poll Timer = 2s] tick -> Poll Ready\n";
+        std::cout << "[Poll Timer = 3s] tick -> Poll Ready\n";
         std::cout << "Not Uploading = Polling\n";
 
         Sample s = acquire_sample();

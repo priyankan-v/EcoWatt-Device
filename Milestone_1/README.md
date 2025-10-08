@@ -4,7 +4,7 @@
 2. To build the project, run:
 
    ```sh
-   g++ -std=c++17 -O2 -pthread src/*.cpp -o build/main.exe
+   g++ -std=c++17 -O2 -pthread src/main.cpp src/buffer_manager.cpp src/sampler.cpp src/uploader.cpp -o build/main.exe
    ```
 
 3. To run the program, use:
