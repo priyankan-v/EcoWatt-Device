@@ -5,6 +5,9 @@
 #include "error_handler.h"
 #include "cloudAPI_handler.h"
 #include "compressor.h"
+#include "encryptionAndSecurity.h"
+
+extern NonceManager nonceManager; // Declare the global instance from main.cpp
 
 // Task definitions
 static scheduler_task_t tasks[TASK_COUNT] = {
@@ -356,6 +359,11 @@ void execute_upload_task(void) {
         // url += "/api/cloud/write";
         String method = "POST";
         String api_key = UPLOAD_API_KEY;
+
+        // Get a unique nonce for this transaction
+        uint32_t nonce = nonceManager.getAndIncrementNonce();
+        Serial.print(F("[SECURITY] Using Nonce: "));
+        Serial.println(nonce);
 
         String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, compressed_data_len + 3);
         
