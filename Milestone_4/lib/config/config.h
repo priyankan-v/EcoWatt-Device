@@ -17,6 +17,8 @@
 // Cloud Upload API Configuration
 #define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/cloud/write"
 #define UPLOAD_API_KEY "ColdPlay2025"
+#define UPLOAD_PSK "ColdPlay@EcoWatt2025"
+#define NONCE_ADDRESS 0  // EEPROM address for storing nonce
 
 // HTTP configuration
 #define HTTP_TIMEOUT_MS 10000
