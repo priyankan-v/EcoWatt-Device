@@ -6,8 +6,8 @@
 // Function declarations
 // String generateMAC(const uint8_t* payload, size_t length);
 String encodeBase64(const uint8_t* payload, size_t length);
-String generateMAC(const String& payload);
-String generateMAC(const char* payload);
+String generateMAC(const String& encodedPayload);
+String generateMAC(const char* encodedPayload);
 
 // Define the EEPROM address where the nonce will be stored.
 // Pick an address that doesn't conflict with other data.
