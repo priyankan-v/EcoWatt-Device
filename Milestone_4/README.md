@@ -98,6 +98,8 @@ The correct order is CRC, then Encryption, then MAC.
 2. Encrypt the payload using function ```String encodeBase64(const uint8_t* payload, size_t length);```
 3. Generate MAC using function ```String generateMAC(const String& encodedPayload);```
 
+in API use the UPLOAD_PSK to compute and validate MAC
+
 when uploading to the cloud add new headers as below
 ```json
 {
