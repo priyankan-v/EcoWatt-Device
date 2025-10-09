@@ -7,3 +7,4 @@
 /Milestone_1/*.o
 /.vscode
 Milestone-2/.vscode/extensions.json
+*/.pio/
