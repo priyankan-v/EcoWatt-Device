@@ -7,3 +7,10 @@
 /Milestone_1/*.o
 /.vscode
 Milestone-2/.vscode/extensions.json
+/Milestone-2/.pio
+/Milestone-2/.vscode
+Milestone-2/diagram.json
+Milestone-2/wokwi.toml
+FOTA_Test/.vscode/extensions.json
+FOTA_Test/diagram.json
+FOTA_Test/wokwi.toml
