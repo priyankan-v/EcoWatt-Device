@@ -10,6 +10,7 @@
 #include <mbedtls/base64.h>
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include <SPIFFS.h>
 
 // Constants
 const char *WIFI_SSID = "Wokwi-GUEST";
@@ -52,6 +53,9 @@ p4QRIy0tK2diRENLSF2KysFwbY6B26BFeFs3v1sYVRhFW9nLkOrQVporCS0KyZmf
 wVD89qSTlnctLcZnIavjKsKUu1nA1iU0yYMdYepKR7lWbnwhdx3ewok=
 -----END CERTIFICATE-----
 )EOF";
+
+String logBuffer[20];
+int logCount = 0;
 
 bool verifySignature(const String &jsonString, const String &signatureBase64, const char *publicKeyPEM) {
     //Decode Base64 signature
@@ -96,7 +100,37 @@ bool verifySignature(const String &jsonString, const String &signatureBase64, co
     }
 }
 
-void performFOTA() {
+void store_and_upload_log(){ 
+  File file = SPIFFS.open("/log.txt", FILE_APPEND);   
+  for (int i = 0; i < logCount; i++) {
+    file.println(logBuffer[i]);
+  }
+  
+  String content = file.readString();
+
+  file.flush();
+  file.close();
+  logCount = 0; 
+
+  HTTPClient http;
+  http.begin("https://eco-watt-cloud.vercel.app/api/fota/log");
+  http.addHeader("Content-Type", "text/plain");
+  int code = http.POST(content);
+  if (code > 0) {
+    Serial.printf("Upload complete, response: %d\n", code);
+  } else {
+    Serial.printf("Upload failed: %s\n", http.errorToString(code).c_str());
+  }
+
+  http.end();
+};
+
+void logMessage(const String &level, const String &msg) {
+  String t = String(millis());
+  logBuffer[logCount++] = "[" + t + "] " + level + " - " + msg;
+}
+
+void perform_FOTA() {
   Preferences prefs;
   WiFiClientSecure client;
   HTTPClient http;
@@ -304,21 +338,15 @@ void performFOTA() {
   // reportRebootPending(job_id);
 
   Serial.println("Restarting in 1000 ms");
+  logMessage("Info", "Update Writing Finished, Restarting in 1000 ms");
   delay(1000);
   ESP.restart(); // Controlled reboot
 }
 
-// void reportProgress(String job_id, size_t offset, size_t total) {
-//   // Send HTTPS or MQTT JSON to EcoWatt Cloud
-// }
-
-// void reportVerification(String job_id, String result, String hash) {
-//   // Send HTTPS POST to EcoWatt Cloud
-// }
-
-// void reportRebootPending(String job_id) {
-//   // Send final status to EcoWatt Cloud before reboot
-// }
+void perform_FOTA_with_logging(){
+  perform_FOTA(); 
+  store_and_upload_log(); 
+};
 
 bool wifi_init(void) {
     Serial.print("Connecting to WiFi: ");
@@ -347,7 +375,7 @@ bool wifi_init(void) {
 void setup() {
   Serial.begin(115200);
   wifi_init();
-  performFOTA();
+  perform_FOTA_with_logging();
   Serial.println("Exited FOTA");
 }
 
