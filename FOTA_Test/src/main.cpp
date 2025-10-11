@@ -10,12 +10,18 @@
 #include <mbedtls/base64.h>
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
-#include <SPIFFS.h>
+#include <LittleFS.h>
+#include "time.h"
 
 // Constants
 const char *WIFI_SSID = "Wokwi-GUEST";
 const char *WIFI_PASSWORD = "";
 const char *manifestURL = "https://eco-watt-cloud.vercel.app/api/fota/manifest";
+const char *logURL = "https://eco-watt-cloud.vercel.app/api/fota/log";
+const char* ntpServer = "pool.ntp.org";
+
+String logBuffer[20];
+int logCount = 0;
 
 const char *firmwarePublicKey = R"(-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIn8Ze+wsLb6boVAkc90OoCB8/V6o
@@ -53,9 +59,6 @@ p4QRIy0tK2diRENLSF2KysFwbY6B26BFeFs3v1sYVRhFW9nLkOrQVporCS0KyZmf
 wVD89qSTlnctLcZnIavjKsKUu1nA1iU0yYMdYepKR7lWbnwhdx3ewok=
 -----END CERTIFICATE-----
 )EOF";
-
-String logBuffer[20];
-int logCount = 0;
 
 bool verifySignature(const String &jsonString, const String &signatureBase64, const char *publicKeyPEM) {
     //Decode Base64 signature
@@ -100,20 +103,51 @@ bool verifySignature(const String &jsonString, const String &signatureBase64, co
     }
 }
 
+void logMessage(const String &level, const String &msg) {
+  time_t t = time(NULL);
+  struct tm* tm_info = localtime(&t);
+
+  char buf[50];
+  sprintf(buf, "[%04d-%02d-%02d %02d:%02d:%02d]",
+          tm_info->tm_year + 1900,
+          tm_info->tm_mon + 1,
+          tm_info->tm_mday,
+          tm_info->tm_hour,
+          tm_info->tm_min,
+          tm_info->tm_sec);
+
+  String timestamp = String(buf);
+  String logMsg = timestamp + " " + level + " - " + msg;
+  logBuffer[logCount++] = logMsg;
+  Serial.println(logMsg);
+}
+
 void store_and_upload_log(){ 
-  File file = SPIFFS.open("/log.txt", FILE_APPEND);   
+  logMessage("Info", "Uploading logs");
+
+  if (!LittleFS.begin(true)) {
+  logMessage("Error", "LittleFS mount failed");
+  }
+
+  File file = LittleFS.open("/log.txt", FILE_WRITE); // set to FILE_APPEND to keep old logs
   for (int i = 0; i < logCount; i++) {
     file.println(logBuffer[i]);
   }
-  
-  String content = file.readString();
 
   file.flush();
   file.close();
   logCount = 0; 
 
+  file = LittleFS.open("/log.txt", FILE_READ);
+  if (!file) {
+    Serial.println("Failed to open log.txt for reading");
+    return;
+  }
+  String content = file.readString();
+  file.close();
+
   HTTPClient http;
-  http.begin("https://eco-watt-cloud.vercel.app/api/fota/log");
+  http.begin(logURL);
   http.addHeader("Content-Type", "text/plain");
   int code = http.POST(content);
   if (code > 0) {
@@ -121,16 +155,10 @@ void store_and_upload_log(){
   } else {
     Serial.printf("Upload failed: %s\n", http.errorToString(code).c_str());
   }
-
   http.end();
 };
 
-void logMessage(const String &level, const String &msg) {
-  String t = String(millis());
-  logBuffer[logCount++] = "[" + t + "] " + level + " - " + msg;
-}
-
-void perform_FOTA() {
+bool perform_FOTA() {
   Preferences prefs;
   WiFiClientSecure client;
   HTTPClient http;
@@ -140,17 +168,15 @@ void perform_FOTA() {
   // Step 1. Download manifest
   // Remove client when CA certificate verification is not needed
   if (!http.begin(client, manifestURL)) { 
-    Serial.println("Unable to start http client on: ");
-    Serial.print(manifestURL);
-    return;
+    logMessage("Error", String("Unable to start http client on: ") + manifestURL);
+    return 0;
   }; 
 
   Serial.println("Root CA Certificate verified");
   int code = http.GET();
   if (code != 200) {
-    Serial.println(code);
-    Serial.println("http GET failed");
-    return;
+    logMessage("Error", "http GET failed for manifest with code:" + String(code));
+    return 0;
   };
 
   String payload = http.getString();
@@ -168,7 +194,7 @@ void perform_FOTA() {
   prefs.begin("fota", false);
   if ((prefs.getInt("job_id", -1) >= job_id) && (prefs.getULong("offset", 0) == 0)) {
     Serial.println("No new updates");
-    return;
+    return 0;
   };
   prefs.end();
 
@@ -187,8 +213,9 @@ void perform_FOTA() {
   if (verifySignature(origManifest, signature, firmwarePublicKey)) {
         Serial.println("Manifest signature verified");
     } else {
-        Serial.println("Manifest signature invalid");
-        return;
+        // Serial.println("Manifest signature invalid");
+        logMessage("Error", "Manifest signature invalid");
+        return 0;
     }
 
   // Step 2. Resume download if needed
@@ -205,9 +232,8 @@ void perform_FOTA() {
   // fwClient.setInsecure(); // Preproduction only
   HTTPClient fwHttp;
   if (!fwHttp.begin(fwClient, fwUrl)) { 
-    Serial.println("Unable to start http client on: ");
-    Serial.print(fwUrl);
-    return;
+    logMessage("Error", String("Unable to start http client on: ") + fwUrl);
+    return 0;
   };
   char rangeHeader[64];
   sprintf(rangeHeader, "bytes=%u-", (unsigned int)offset);
@@ -217,8 +243,9 @@ void perform_FOTA() {
   if (respCode != HTTP_CODE_PARTIAL_CONTENT && respCode != HTTP_CODE_OK) {
     Serial.println(rangeHeader);
     Serial.printf("HTTP error: %d\n", respCode);
+    logMessage("Error", String("Firmware HTTP response error with code:" + String(respCode)));
     fwHttp.end();
-    return;
+    return 0;
   }
 
   int totalWritten = offset;
@@ -228,27 +255,22 @@ void perform_FOTA() {
   const esp_partition_t* running = esp_ota_get_running_partition();
   const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
 
-  Serial.printf("Running partition: %s, Next OTA partition: %s\r\n", running->label, next->label);
-
-  // Step 3. Begin OTA update
-  // if (!Update.begin(totalSize)) {
-  //   Serial.println("Update begin failed!");
-  //   return;
-  // }
+  logMessage("Info", "Running partition:" + String(running->label) + ", Next OTA partition:" + String(next->label));
 
   esp_ota_handle_t otaHandle = 0;
   esp_err_t err = esp_ota_begin(next, fwSize, &otaHandle);
   if (err != ESP_OK) {
     Serial.printf("esp_ota_begin failed: %s\n", esp_err_to_name(err));
-    return;
+    logMessage("Error", "Unable to allocate partition for new firmware");
+    return 0;
   }
 
   // uint8_t buf[1024];
   uint8_t *buf = (uint8_t *)malloc(4096); // using heap since a bigger buffer size causes stack overflow
   if (!buf) {
-    Serial.println("Buffer allocation failed!");
+    logMessage("Error", "Unable to allocate Heap buffer");
     esp_ota_end(otaHandle);
-    return;
+    return 0;
   }
 
   unsigned char hashBuf[32];
@@ -258,13 +280,13 @@ void perform_FOTA() {
   mbedtls_sha256_starts_ret(&ctx, 0);
 
   while (fwHttp.connected() && (bytesRead = stream->readBytes(buf, 4096)) > 0) {
-    // Update.write(buf, bytesRead);
     err = esp_ota_write(otaHandle, buf, bytesRead);
     if (err != ESP_OK) {
       Serial.printf("esp_ota_write failed: %s\n", esp_err_to_name(err));
+      logMessage("Error", "Firmware chunk write failed");
       free(buf);
       esp_ota_end(otaHandle);
-      return;
+      return 0;
     }
 
     mbedtls_sha256_update_ret(&ctx, buf, bytesRead);
@@ -272,17 +294,16 @@ void perform_FOTA() {
 
     // Persist progress (write offset to nvs every 100KB)
     if (totalWritten % 102400 == 0) {
-      Serial.println("Saving the progress in nvs");
+      logMessage("Info", String(totalWritten) + " Bytes Written");
       prefs.begin("fota", false);
       prefs.putULong("offset", totalWritten);
       prefs.end();
     };
-    Serial.printf("Progress: %d/%d bytes (%.2f%%)\r\n", totalWritten, fwSize, 100.0 * totalWritten / fwSize);
 
-    // Report progress to cloud
-    // reportProgress(job_id, totalWritten, totalSize);
+    Serial.printf("Progress: %d/%d bytes (%.2f%%)\r\n", totalWritten, fwSize, 100.0 * totalWritten / fwSize);
   }
-  Serial.println("Saving the progress in nvs");
+
+  logMessage("Info", "Firmware Writing finished");
     prefs.begin("fota", false);
     prefs.putULong("offset", totalWritten);
     prefs.end();
@@ -300,52 +321,48 @@ void perform_FOTA() {
     computedHash += hexBuf;
   }
   // Step 4. Verify hash
-  // String computedHash = toHex(hashBuf, 32);
-  if (!computedHash.equalsIgnoreCase(shaExpected)) {
-    Serial.println("SHA mismatch, abort");
-    Serial.println(computedHash);
+  if (!computedHash.equalsIgnoreCase(shaExpected)) {   
+    logMessage("Error", "SHA mismatch, abort");
+    Serial.println("Computed Hash:" + computedHash);
     esp_ota_abort(otaHandle);
-    // Update.abort();
-    // reportVerification(job_id, "failure", computedHash);
-    return;
+    return 0;
   }
+  logMessage("Info", "SHA Verified");
 
-  Serial.println("SHA Verified");
-
-  // if (!Update.end(false)) { // true = set as boot partition
-  //   Serial.printf("Update failed: %s\n", Update.errorString());
-  //   return;
-  // }
   err = esp_ota_end(otaHandle);
   if (err != ESP_OK) {
     Serial.printf("esp_ota_end failed: %s\n", esp_err_to_name(err));
-    return;
+    logMessage("Error", "Invalid Firmware");
+    return 0;
   }
 
   err = esp_ota_set_boot_partition(next);
   if (err != ESP_OK) {
     Serial.printf("esp_ota_set_boot_partition failed: %s\n", esp_err_to_name(err));
-    return;
+    logMessage("Error", "Unable to select the new boot partition");
+    return 0;
   }
 
-  Serial.println("Update Writing Finished");
   prefs.begin("fota", false);
   prefs.putULong("offset", 0);
   prefs.end();
 
-  // // Step 5. Report success
-  // reportVerification(job_id, "success", computedHash);
-  // reportRebootPending(job_id);
-
-  Serial.println("Restarting in 1000 ms");
-  logMessage("Info", "Update Writing Finished, Restarting in 1000 ms");
-  delay(1000);
-  ESP.restart(); // Controlled reboot
+  // Step 5. Report success
+  logMessage("Info", "Firmware validated and ready for booting");
+  return true;
 }
 
 void perform_FOTA_with_logging(){
-  perform_FOTA(); 
+  bool restart = perform_FOTA(); 
+  if (!restart){
+    logMessage("Error", "FOTA Failed");
+  };
   store_and_upload_log(); 
+  if (restart) {
+    Serial.println("Restarting in 1000 ms");
+    delay(1000);
+    ESP.restart();
+  };
 };
 
 bool wifi_init(void) {
@@ -375,8 +392,9 @@ bool wifi_init(void) {
 void setup() {
   Serial.begin(115200);
   wifi_init();
+  configTime(0, 0, "pool.ntp.org");
   perform_FOTA_with_logging();
-  Serial.println("Exited FOTA");
+  Serial.println("Exited FOTA with logging");
 }
 
 void loop() {
