@@ -1,7 +1,7 @@
 #include "encryptionAndSecurity.h"
 #include "config.h"
 #include <EEPROM.h>
-#include <Crypto.h>
+#include <Hash.h>
 #include <SHA256.h>
 #include "base64.hpp"
 
@@ -39,20 +39,14 @@ String generateMAC(const String& payload) {
  * @return String containing the MAC in hexadecimal format.
  */
 String generateMAC(const char* payload) {
-    // 1. Create an object of the SHA256 class
-    SHA256 sha256;
-
-    // 2. Initialize the HMAC calculation with the key
-    sha256.resetHMAC((const uint8_t*)UPLOAD_PSK, strlen(UPLOAD_PSK));
-    
-    // 3. Update with the payload to be authenticated
-    sha256.update((const uint8_t*)payload, strlen(payload));
-
-    // 4. Finalize and get the HMAC result
+    // Create a buffer for the binary MAC result
     uint8_t mac[SHA256::HASH_SIZE];
-    sha256.finalizeHMAC((const uint8_t*)UPLOAD_PSK, strlen(UPLOAD_PSK), mac, sizeof(mac));
 
-    // 5. Convert the binary MAC to a hexadecimal string
+    hmac<SHA256>(mac, sizeof(mac),
+                 (const uint8_t*)UPLOAD_PSK, strlen(UPLOAD_PSK),
+                 (const uint8_t*)payload, strlen(payload));
+
+    // Convert the binary MAC to a hexadecimal string
     String macHex = "";
     macHex.reserve(64);
     for (size_t i = 0; i < sizeof(mac); i++) {
