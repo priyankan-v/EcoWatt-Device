@@ -7,6 +7,7 @@
 
 // Helper macro to calculate the required buffer size for base64 encoding
 #define BASE64_ENCODE_OUT_SIZE(s) (((s) + 2) / 3 * 4)
+#define BASE64_DECODE_OUT_SIZE(s) ((s) / 4 * 3)
 
 /**
  * @brief Encodes a byte array into a Base64 String.
@@ -22,6 +23,32 @@ String encodeBase64(const uint8_t* payload, size_t length) {
     
     encodedPayload[encodedLen] = '\0'; // Ensure null termination for the String object
     return String(encodedPayload);
+}
+
+/**
+ * @brief Decodes a Base64 String into a byte array.
+ * @param encodedPayload The Base64 encoded String.
+ * @param outputBuffer Pointer to the buffer where decoded data will be stored.
+ * @param outputBufferSize The size of the output buffer.
+ * @return The number of bytes decoded, or 0 on error (e.g., buffer too small).
+ */
+size_t decodeBase64(const String& encodedPayload, uint8_t* outputBuffer, size_t outputBufferSize) {
+    // Calculate the maximum possible decoded length
+    size_t expectedLen = BASE64_DECODE_OUT_SIZE(encodedPayload.length());
+    if (outputBufferSize < expectedLen) {
+        // Error: Output buffer is too small to hold the decoded data.
+        return 0; 
+    }
+
+    // Use the decode function from the base64 library
+    // It returns the actual number of bytes written to the output buffer.
+    size_t decodedLen = decode_base64(
+        (const unsigned char*)encodedPayload.c_str(), 
+        encodedPayload.length(), 
+        outputBuffer
+    );
+    
+    return decodedLen;
 }
 
 /**
