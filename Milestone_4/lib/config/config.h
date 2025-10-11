@@ -5,8 +5,8 @@
 #include <pgmspace.h>
 
 // WiFi credentials
-#define WIFI_SSID "Kirus"
-#define WIFI_PASSWORD "124adida"
+#define WIFI_SSID "Wokwi-GUEST"
+#define WIFI_PASSWORD ""
 #define WIFI_CONNECT_TIMEOUT_MS 10000
 #define WIFI_RETRY_DELAY_MS 5000
 
@@ -17,6 +17,9 @@
 // Cloud Upload API Configuration
 #define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/cloud/write"
 #define UPLOAD_API_KEY "ColdPlay2025"
+#define MANIFEST_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/manifest"
+#define LOG_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/log"
+#define NTP_SERVER "pool.ntp.org"
 
 // HTTP configuration
 #define HTTP_TIMEOUT_MS 10000
@@ -30,6 +33,7 @@
 #define HEALTH_CHECK_INTERVAL_MS 30000
 #define WATCHDOG_TIMEOUT_S 30
 #define UPLOAD_INTERVAL_MS 15000 //900000; // 15 minutes
+#define FOTA_INTERVAL_MS 15000 // Change this later on
 
 // Modbus configuration
 #define SLAVE_ADDRESS 0x11
