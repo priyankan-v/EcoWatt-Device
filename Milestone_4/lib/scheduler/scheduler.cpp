@@ -5,12 +5,14 @@
 #include "error_handler.h"
 #include "cloudAPI_handler.h"
 #include "compressor.h"
+#include "fota.h"
 
 // Task definitions
 static scheduler_task_t tasks[TASK_COUNT] = {
     {TASK_READ_REGISTERS, POLL_INTERVAL_MS, 0, true},
     {TASK_WRITE_REGISTER, WRITE_INTERVAL_MS, 0, true},
-    {TASK_UPLOAD_DATA, UPLOAD_INTERVAL_MS, 0, true}
+    {TASK_UPLOAD_DATA, UPLOAD_INTERVAL_MS, 0, true},
+    {TASK_PERFORM_FOTA, FOTA_INTERVAL_MS, 0, true}
 };
 
 // Single buffer definition - Buffer Rules Implementation
@@ -51,6 +53,9 @@ void scheduler_run(void) {
                     break;
                 case TASK_UPLOAD_DATA:
                     execute_upload_task();
+                    break;
+                case TASK_PERFORM_FOTA:
+                    execute_fota_task();
                     break;
                 default:
                     break;
@@ -402,6 +407,10 @@ void execute_upload_task(void) {
         Serial.println(upload_retry_count);
         return;
     }
+}
+
+void execute_fota_task() {
+    perform_FOTA_with_logging();
 }
 
 // Compress the buffer and add header
