@@ -14,8 +14,8 @@
 #include "time.h"
 
 // Constants
-const char *manifestURL = MANIFEST_API_BASE_URL;
-const char *logURL = LOG_BASE_URL;
+const char *manifestURL = UPLOAD_API_BASE_URL "/api/fota/manifest";
+const char *logURL = UPLOAD_API_BASE_URL "/api/fota/log";
 const char* ntpServer = NTP_SERVER;
 
 String logBuffer[20];

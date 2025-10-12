@@ -15,10 +15,10 @@
 #define API_KEY "NjhhZWIwNDU1ZDdmMzg3MzNiMTQ5YWQzOjY4YWViMDQ1NWQ3ZjM4NzMzYjE0OWFjOQ=="
 
 // Cloud Upload API Configuration
-#define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/cloud/write"
+#define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app"
 #define UPLOAD_API_KEY "ColdPlay2025"
-#define MANIFEST_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/manifest"
-#define LOG_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/log"
+// #define MANIFEST_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/manifest"
+// #define LOG_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/log"
 #define NTP_SERVER "pool.ntp.org"
 
 // HTTP configuration

@@ -358,7 +358,7 @@ void execute_upload_task(void) {
         String url;
         url.reserve(128);
         url = UPLOAD_API_BASE_URL;
-        // url += "/api/cloud/write";
+        url += "/api/cloud/write";
         String method = "POST";
         String api_key = UPLOAD_API_KEY;
 
