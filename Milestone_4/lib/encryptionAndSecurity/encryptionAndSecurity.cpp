@@ -1,54 +1,51 @@
 #include "encryptionAndSecurity.h"
 #include "config.h"
 #include <EEPROM.h>
-#include <Hash.h>
-#include <SHA256.h>
-#include "base64.hpp"
-
-// Helper macro to calculate the required buffer size for base64 encoding
-#define BASE64_ENCODE_OUT_SIZE(s) (((s) + 2) / 3 * 4)
-#define BASE64_DECODE_OUT_SIZE(s) ((s) / 4 * 3)
+#include <mbedtls/base64.h>
+#include <mbedtls/md.h>
 
 /**
- * @brief Encodes a byte array into a Base64 String.
+ * @brief Encodes a byte array into a Base64 String using mbedtls.
  * @param payload Pointer to the byte array.
  * @param length The length of the byte array.
  * @return The Base64 encoded String.
  */
 String encodeBase64(const uint8_t* payload, size_t length) {
-    size_t encodedLen = BASE64_ENCODE_OUT_SIZE(length);
+    size_t encodedLen = 0;
+    // First call to get the required length
+    mbedtls_base64_encode(NULL, 0, &encodedLen, payload, length);
+
     char encodedPayload[encodedLen + 1]; // +1 for null terminator
 
-    encode_base64((unsigned char*)payload, length, (unsigned char*)encodedPayload);
+    // Second call to perform the encoding
+    mbedtls_base64_encode((unsigned char*)encodedPayload, encodedLen, &encodedLen, payload, length);
     
-    encodedPayload[encodedLen] = '\0'; // Ensure null termination for the String object
+    encodedPayload[encodedLen] = '\0'; // Ensure null termination
     return String(encodedPayload);
 }
 
 /**
- * @brief Decodes a Base64 String into a byte array.
+ * @brief Decodes a Base64 String into a byte array using mbedtls.
  * @param encodedPayload The Base64 encoded String.
  * @param outputBuffer Pointer to the buffer where decoded data will be stored.
  * @param outputBufferSize The size of the output buffer.
- * @return The number of bytes decoded, or 0 on error (e.g., buffer too small).
+ * @return The number of bytes decoded, or 0 on error.
  */
 size_t decodeBase64(const String& encodedPayload, uint8_t* outputBuffer, size_t outputBufferSize) {
-    // Calculate the maximum possible decoded length
-    size_t expectedLen = BASE64_DECODE_OUT_SIZE(encodedPayload.length());
-    if (outputBufferSize < expectedLen) {
-        // Error: Output buffer is too small to hold the decoded data.
-        return 0; 
-    }
-
-    // Use the decode function from the base64 library
-    // It returns the actual number of bytes written to the output buffer.
-    size_t decodedLen = decode_base64(
+    size_t decodedLen = 0;
+    int ret = mbedtls_base64_decode(
+        outputBuffer, 
+        outputBufferSize, 
+        &decodedLen, 
         (const unsigned char*)encodedPayload.c_str(), 
-        encodedPayload.length(), 
-        outputBuffer
+        encodedPayload.length()
     );
-    
-    return decodedLen;
+
+    if (ret == 0) {
+        return decodedLen; // Success
+    } else {
+        return 0; // Fail
+    }
 }
 
 /**
@@ -57,21 +54,26 @@ size_t decodeBase64(const String& encodedPayload, uint8_t* outputBuffer, size_t 
  * @return String containing the MAC in hexadecimal format.
  */
 String generateMAC(const String& payload) {
-    return generateMAC(payload.c_str());
+    return generateMAC((const uint8_t*)payload.c_str(), payload.length());
 }
 
 /**
- * @brief Generate HMAC-SHA256 MAC for the given payload using PSK from config.
- * @param payload The message to authenticate (C-style string).
- * @return String containing the MAC in hexadecimal format.
+ * @brief Generates an HMAC-SHA256 MAC for a byte array using mbedtls.
+ * @param payload Pointer to the byte array.
+ * @param length The length of the byte array.
+ * @return The MAC as a hexadecimal String.
  */
-String generateMAC(const char* payload) {
-    // Create a buffer for the binary MAC result
-    uint8_t mac[SHA256::HASH_SIZE];
-
-    hmac<SHA256>(mac, sizeof(mac),
-                 (const uint8_t*)UPLOAD_PSK, strlen(UPLOAD_PSK),
-                 (const uint8_t*)payload, strlen(payload));
+String generateMAC(const uint8_t* payload, size_t length) {
+    uint8_t mac[32]; // SHA-256 outputs a 32-byte hash
+    const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    
+    // Perform the HMAC operation
+    mbedtls_md_hmac(
+        md_info,
+        (const uint8_t*)UPLOAD_PSK, strlen(UPLOAD_PSK),
+        payload, length,
+        mac
+    );
 
     // Convert the binary MAC to a hexadecimal string
     String macHex = "";
@@ -85,13 +87,20 @@ String generateMAC(const char* payload) {
     return macHex;
 }
 
+
 // --- NonceManager Implementation ---
 
-#define NONCE_ADDRESS 0
-
+/**
+ * @brief Initializes the EEPROM for nonce storage.
+ */
 void NonceManager::begin() {
     EEPROM.begin(4); 
 }
+
+/**
+ * @brief Gets the current nonce value and increments it for the next use.
+ * @return The current nonce value (before incrementing).
+ */
 
 uint32_t NonceManager::getAndIncrementNonce() {
     uint32_t currentNonce;
