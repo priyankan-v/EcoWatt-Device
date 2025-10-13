@@ -15,3 +15,4 @@ FOTA_Test/.vscode/extensions.json
 FOTA_Test/diagram.json
 FOTA_Test/wokwi.toml
 FOTA_Test/test.cpp
+*/.pio/

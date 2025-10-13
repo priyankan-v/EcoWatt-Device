@@ -90,3 +90,22 @@ Update `lib/config/config.h` with your specific:
 9. **Register Writing**: Every 25 seconds, write export power percentage to register 0x0008.  
 10. **Health Monitoring**: Continuous WiFi status checking, error logging, and watchdog timer feeding.  
 11. **Loop Continuation**: Return to step 2 and repeat the cycle indefinitely.  
+
+
+
+The correct order is CRC, then Encryption, then MAC.
+1. Append CRC to the payload
+2. Encrypt the payload using function ```String encodeBase64(const uint8_t* payload, size_t length);```
+3. Generate MAC using function ```String generateMAC(const String& encodedPayload);```
+
+in API use the UPLOAD_PSK to compute and validate MAC
+
+when uploading to the cloud add new headers as below
+```json
+{
+  "nonce": <nonce value>,
+  "payload_is_mock_encrypted": true,
+  "payload": "<base64-encoded-JSON-string>",
+  "mac": "Generated MAC"
+}
+```

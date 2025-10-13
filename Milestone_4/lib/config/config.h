@@ -20,6 +20,8 @@
 // #define MANIFEST_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/manifest"
 // #define LOG_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/log"
 #define NTP_SERVER "pool.ntp.org"
+#define UPLOAD_PSK "ColdPlay@EcoWatt2025"
+#define NONCE_ADDRESS 0  // EEPROM address for storing nonce
 
 // HTTP configuration
 #define HTTP_TIMEOUT_MS 10000
