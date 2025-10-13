@@ -1,5 +1,5 @@
-#include <Arduino.h>
-#include <WiFi.h>
+#include "fota.h"
+#include "config.h"
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
@@ -14,11 +14,9 @@
 #include "time.h"
 
 // Constants
-const char *WIFI_SSID = "Wokwi-GUEST";
-const char *WIFI_PASSWORD = "";
-const char *manifestURL = "https://eco-watt-cloud.vercel.app/api/fota/manifest";
-const char *logURL = "https://eco-watt-cloud.vercel.app/api/fota/log";
-const char* ntpServer = "pool.ntp.org";
+const char *manifestURL = UPLOAD_API_BASE_URL "/api/fota/manifest";
+const char *logURL = UPLOAD_API_BASE_URL "/api/fota/log";
+const char* ntpServer = NTP_SERVER;
 
 String logBuffer[20];
 int logCount = 0;
@@ -180,7 +178,6 @@ bool perform_FOTA() {
   };
 
   String payload = http.getString();
-  Serial.println(payload);
   http.end();
 
   JsonDocument doc;
@@ -353,6 +350,8 @@ bool perform_FOTA() {
 }
 
 void perform_FOTA_with_logging(){
+  configTime(19800, 0, NTP_SERVER); // Adjusted for SL
+  logMessage("Info", "Starting FOTA");
   bool restart = perform_FOTA(); 
   if (!restart){
     logMessage("Error", "FOTA Failed");
@@ -364,38 +363,3 @@ void perform_FOTA_with_logging(){
     ESP.restart();
   };
 };
-
-bool wifi_init(void) {
-    Serial.print("Connecting to WiFi: ");
-    Serial.println(WIFI_SSID);
-    
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD, 6);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi connected");
-        Serial.print("IP address: ");
-        Serial.println(WiFi.localIP());
-        return true;
-    } else {
-        Serial.println("\nWiFi connection failed");
-        return false;
-    }
-}
-
-void setup() {
-  Serial.begin(115200);
-  wifi_init();
-  configTime(0, 0, "pool.ntp.org");
-  perform_FOTA_with_logging();
-  Serial.println("Exited FOTA with logging");
-}
-
-void loop() {
-}

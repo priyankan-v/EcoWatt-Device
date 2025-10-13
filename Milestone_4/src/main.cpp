@@ -11,7 +11,7 @@ NonceManager nonceManager;
 
 void setup() {
     Serial.begin(SERIAL_BAUD_RATE);
-    Serial.println(F("EcoWatt Device - Milestone 3"));
+    Serial.println(F("EcoWatt Device - Milestone 4"));
     
     // Initialize modules
     error_handler_init();
