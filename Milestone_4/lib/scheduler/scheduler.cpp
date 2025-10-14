@@ -1,5 +1,6 @@
 #include "scheduler.h"
 #include "config.h"
+#include "config_manager.h"
 #include "api_client.h"
 #include "modbus_handler.h"
 #include "error_handler.h"
@@ -38,6 +39,12 @@ const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT] = {0x0000, 0x0001, 0x
 
 void scheduler_run(void) {
     unsigned long current_time = millis();
+    
+    // Update task intervals from ConfigManager if available
+    if (g_config_manager && g_config_manager->is_initialized()) {
+        tasks[TASK_READ_REGISTERS].interval_ms = config_get_sampling_interval_ms();
+        tasks[TASK_UPLOAD_DATA].interval_ms = config_get_upload_interval_ms();
+    }
     
     for (int i = 0; i < TASK_COUNT; i++) {
         if (!tasks[i].enabled) {
@@ -148,8 +155,17 @@ void store_register_reading(const uint16_t* values, size_t count) {
 void execute_read_task(void) {
     // Serial.println(F("Executing read task..."));
     
+    // Get current configuration
+    uint8_t slave_addr = config_get_slave_address();
+    uint8_t register_count = config_get_register_count();
+    uint16_t active_registers[MAX_REGISTERS];
+    config_get_active_registers(active_registers, MAX_REGISTERS);
+    
+    // Use configured registers or fall back to default
+    uint16_t start_register = (register_count > 0) ? active_registers[0] : pgm_read_word(&READ_REGISTERS[0]);
+    
     // Generate read frame
-    String frame = format_request_frame(SLAVE_ADDRESS, FUNCTION_CODE_READ, pgm_read_word(&READ_REGISTERS[0]), READ_REGISTER_COUNT);
+    String frame = format_request_frame(slave_addr, FUNCTION_CODE_READ, start_register, register_count);
     frame = append_crc_to_frame(frame);
     
     String url;
@@ -386,6 +402,20 @@ void execute_upload_task(void) {
             Serial.print(F("[UPLOAD] Success: "));
             Serial.print(compressed_data_len + 3);
             Serial.println(F(" bytes uploaded"));
+            
+            // STEP: Process configuration updates from cloud response
+            String config_ack = config_process_cloud_response(response);
+            if (config_ack.length() > 0) {
+                // Send configuration acknowledgment to cloud
+                extern void send_config_ack_to_cloud(const String& ack_json);
+                send_config_ack_to_cloud(config_ack);
+            }
+            
+            // STEP: Apply any pending configuration changes after successful upload
+            if (config_has_pending_changes()) {
+                Serial.println(F("[CONFIG] Applying pending configuration changes"));
+                config_apply_pending_changes();
+            }
             
             // WORKFLOW STEP 4: After successful ACK from cloud → clear buffer
             Serial.println(F("[WORKFLOW] Successful ACK → clear buffer"));
