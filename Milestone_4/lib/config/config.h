@@ -31,11 +31,12 @@
 
 // Timing configuration
 #define POLL_INTERVAL_MS 3000
-#define WRITE_INTERVAL_MS 25000
+#define WRITE_INTERVAL_MS  (UPLOAD_INTERVAL_MS / 2) 
 #define HEALTH_CHECK_INTERVAL_MS 30000
 #define WATCHDOG_TIMEOUT_S 30
 #define UPLOAD_INTERVAL_MS 15000 //900000; // 15 minutes
 #define FOTA_INTERVAL_MS 15000 // Change this later on
+#define COMMAND_INTERVAL_MS 15000
 
 // Modbus configuration
 #define SLAVE_ADDRESS 0x11

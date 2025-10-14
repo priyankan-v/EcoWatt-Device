@@ -18,4 +18,8 @@ String upload_api_send_request(const String& url, const String& method, const St
 // Send an upload API request with retry logic
 String upload_api_send_request_with_retry(const String& url, const String& method, const String& api_key, const uint8_t* frame, size_t frame_length, const String& nonce, const String& mac);
 
+String api_command_request(const String& url, const String& method, const String& api_key, const String& frame);
+
+void api_command_request_with_retry(const String& url, const String& method, const String& api_key, const String& frame);
+
 #endif
