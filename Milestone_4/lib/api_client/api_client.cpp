@@ -77,7 +77,7 @@ String api_send_request(const String& url, const String& method, const String& a
     return "";
 }
 
-String upload_api_send_request(const String& url, const String& method, const String& api_key, const uint8_t* frame, size_t frame_length) {
+String upload_api_send_request(const String& url, const String& method, const String& api_key, const uint8_t* frame, size_t frame_length, const String& nonce, const String& mac) {
     if (WiFi.status() != WL_CONNECTED) {
         log_error(ERROR_WIFI_DISCONNECTED, "WiFi not connected for API request");
         return "";
@@ -91,6 +91,9 @@ String upload_api_send_request(const String& url, const String& method, const St
     http.setTimeout(HTTP_TIMEOUT_MS);
     http.addHeader(F("Content-Type"), F("application/octet-stream"));
     http.addHeader(F("Authorization"), api_key);
+    http.addHeader(F("payload_is_mock_encrypted"), "true");
+    http.addHeader(F("nonce"), nonce);
+    http.addHeader(F("mac"), mac);
     
     int http_code;
     if (method == "POST") {
@@ -129,7 +132,6 @@ String api_send_request_with_retry(const String& url, const String& method, cons
 
     while (retry_count <= MAX_RETRIES) {
         String response = api_send_request(url, method, api_key, frame);
-
         if (response.length() > 0) {
             // Success
             return response;
@@ -167,12 +169,12 @@ String api_send_request_with_retry(const String& url, const String& method, cons
     return "";
 }
 
-String upload_api_send_request_with_retry(const String& url, const String& method, const String& api_key, const uint8_t* frame, size_t frame_length) {
+String upload_api_send_request_with_retry(const String& url, const String& method, const String& api_key, const uint8_t* frame, size_t frame_length, const String& nonce, const String& mac) {
     int retry_count = 0;
     error_code_t last_error_code = ERROR_NONE;
 
     while (retry_count <= MAX_RETRIES) {
-        String response = upload_api_send_request(url, method, api_key, frame, frame_length);
+        String response = upload_api_send_request(url, method, api_key, frame, frame_length, nonce, mac);
 
         if (response.length() > 0) {
             // Success

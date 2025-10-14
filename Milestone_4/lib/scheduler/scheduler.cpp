@@ -7,6 +7,9 @@
 #include "cloudAPI_handler.h"
 #include "compressor.h"
 #include "fota.h"
+#include "encryptionAndSecurity.h"
+
+extern NonceManager nonceManager; // Declare the global instance from main.cpp
 
 // Task definitions
 static scheduler_task_t tasks[TASK_COUNT] = {
@@ -378,7 +381,22 @@ void execute_upload_task(void) {
         String method = "POST";
         String api_key = UPLOAD_API_KEY;
 
-        String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, compressed_data_len + 3);
+        // Get a unique nonce for this transaction
+        uint32_t nonce = nonceManager.getAndIncrementNonce();
+        Serial.print(F("[SECURITY] Using Nonce: "));
+        Serial.println(nonce);
+
+        // Encode payload to Base64 directly from the byte array
+        String upload_frame_base64 = encodeBase64(upload_frame_with_crc, compressed_data_len + 3);
+        Serial.print(F("[SECURITY] Base64 payload length (size_t): "));
+        Serial.println(upload_frame_base64.length());
+
+        // Generate MAC for the upload frame
+        String mac = generateMAC(upload_frame_base64);
+        Serial.print(F("[SECURITY] Generated MAC: "));
+        Serial.println(mac);
+
+        String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, compressed_data_len + 3, String(nonce), mac);
         
         if (response.length() > 0) {
             Serial.print(F("[UPLOAD] Success: "));
