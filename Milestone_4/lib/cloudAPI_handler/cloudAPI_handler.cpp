@@ -1,5 +1,7 @@
 #include "cloudAPI_handler.h"
 #include "calculateCRC.h"
+#include "config.h"
+#include "api_client.h"
 
 bool validate_upload_response(const String& response) {
     if (response.length() == 0) {
@@ -33,6 +35,65 @@ bool validate_upload_response(const String& response) {
 
     Serial.println(F("Error: Unrecognized response format from the cloud API."));
     return false;
+}
+
+bool parse_config_update_from_response(const String& response, String& config_update_json) {
+    if (response.length() == 0) {
+        return false;
+    }
+
+    // Parse JSON response to look for config_update section
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+    
+    if (error) {
+        Serial.print(F("[CONFIG] JSON parse error in response: "));
+        Serial.println(error.c_str());
+        return false;
+    }
+
+    // Check if config_update exists in the response
+    if (doc["config_update"].is<JsonObject>()) {
+        Serial.println(F("[CONFIG] Configuration update found in response"));
+        
+        // Create the config update JSON string
+        JsonDocument config_doc;
+        config_doc["config_update"] = doc["config_update"];
+        
+        serializeJson(config_doc, config_update_json);
+        
+        Serial.print(F("[CONFIG] Extracted config update: "));
+        Serial.println(config_update_json);
+        return true;
+    }
+
+    return false;
+}
+
+void send_config_ack_to_cloud(const String& ack_json) {
+    if (ack_json.length() == 0) {
+        Serial.println(F("[CONFIG] Empty ACK, skipping upload"));
+        return;
+    }
+
+    Serial.print(F("[CONFIG] Sending ACK to cloud: "));
+    Serial.println(ack_json);
+
+    // Use the API client to send the acknowledgment
+    String url = UPLOAD_API_BASE_URL;
+    url += "/api/config_ack";
+    String method = "POST";
+    String api_key = UPLOAD_API_KEY;
+
+    // Send the JSON request
+    extern String json_api_send_request(const String& url, const String& method, const String& api_key, const String& json_body);
+    String response = json_api_send_request(url, method, api_key, ack_json);
+    
+    if (response.length() > 0) {
+        Serial.println(F("[CONFIG] ACK successfully sent to cloud"));
+    } else {
+        Serial.println(F("[CONFIG] Failed to send ACK to cloud"));
+    }
 }
 
 void encrypt_compressed_frame(const uint8_t* data, size_t len, uint8_t* output_data) {
