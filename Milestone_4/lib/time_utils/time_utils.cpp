@@ -36,10 +36,10 @@ String get_current_timestamp() {
 
     // Fallback message if NTP not yet synced
     if (now < 100000) {
-        return "1970-01-01T00:00:00IST";
+        return "1970-01-01T00:00:00+05:30";
     }
 
     localtime_r(&now, &timeinfo);
-    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SIST", &timeinfo);
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S+05:30", &timeinfo);
     return String(buf);
 }

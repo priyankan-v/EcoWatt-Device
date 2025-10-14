@@ -215,6 +215,47 @@ String upload_api_send_request_with_retry(const String& url, const String& metho
     return "";
 }
 
+String json_api_send_request(const String& url, const String& method, const String& api_key, const String& json_body) {
+    if (WiFi.status() != WL_CONNECTED) {
+        log_error(ERROR_WIFI_DISCONNECTED, "WiFi not connected for JSON API request");
+        return "";
+    }
+
+    HTTPClient http;
+
+    // Begin the HTTP request
+    http.begin(url);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.addHeader(F("Content-Type"), F("application/json"));
+    http.addHeader(F("Authorization"), api_key);
+    
+    int http_code;
+    if (method == "POST") {
+        http_code = http.POST(json_body);
+    } else if (method == "GET") {
+        http_code = http.GET();
+    } else {
+        log_error(ERROR_INVALID_HTTP_METHOD, "Unsupported HTTP method");
+        http.end();
+        return "";
+    }
+
+    String response = "";
+    if (http_code == HTTP_CODE_OK) {
+        response = http.getString();
+        Serial.print(F("[JSON API] Success: "));
+        Serial.println(response);
+    } else if (http_code > 0) {
+        char error_msg[64];
+        snprintf(error_msg, sizeof(error_msg), "JSON API HTTP error: %d", http_code);
+        log_error(ERROR_HTTP_FAILED, error_msg);
+    } else {
+        log_error(ERROR_HTTP_TIMEOUT, "JSON API HTTP request timeout");
+    }
+
+    http.end();
+    return response;
+}
 
 // Command Handling 
 String api_command_request(const String& url, const String& method, const String& api_key, const String& frame) {
@@ -249,10 +290,9 @@ String api_command_request(const String& url, const String& method, const String
             http.end();
             return response;
         } else {
+            http.end();
             return "";
         }
-        return "";
-
     } else if (http_code > 0) {
         char error_msg[64];
         snprintf(error_msg, sizeof(error_msg), "HTTP error: %d", http_code);
