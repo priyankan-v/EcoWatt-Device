@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <config.h>
+#include <config_manager.h>
 #include <wifi_manager.h>
 #include <api_client.h>
 #include <error_handler.h>
@@ -20,6 +21,17 @@ void setup() {
         ESP.restart();
     }
     
+    // Initialize ConfigManager
+    if (!config_manager_init()) {
+        Serial.println(F("Failed to initialize ConfigManager"));
+        // Continue with default configuration
+    } else {
+        Serial.println(F("ConfigManager initialized successfully"));
+    }
+    
+    // Configuration is now handled through cloud upload responses
+    Serial.println(F("Configuration updates integrated with cloud communication"));
+    
     // Initialize API client
     if (!api_init()) {
         log_error(ERROR_HTTP_FAILED, "Failed to initialize API client");
@@ -38,6 +50,9 @@ void setup() {
 void loop() {
     // Run the scheduler (handles all periodic tasks)
     scheduler_run();
+    
+    // Process HTTP configuration requests
+    // Configuration processing is now integrated with cloud upload responses
     
     // Small delay to prevent tight looping
     delay(100);
