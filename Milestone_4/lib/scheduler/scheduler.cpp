@@ -8,15 +8,18 @@
 #include "compressor.h"
 #include "fota.h"
 #include "encryptionAndSecurity.h"
+#include "command_parse.h"
+#include "time_utils.h"
 
 extern NonceManager nonceManager; // Declare the global instance from main.cpp
 
 // Task definitions
 static scheduler_task_t tasks[TASK_COUNT] = {
     {TASK_READ_REGISTERS, POLL_INTERVAL_MS, 0, true},
-    {TASK_WRITE_REGISTER, WRITE_INTERVAL_MS, 0, true},
+    {TASK_WRITE_REGISTER, WRITE_INTERVAL_MS, 0, false},
     {TASK_UPLOAD_DATA, UPLOAD_INTERVAL_MS, 0, true},
-    {TASK_PERFORM_FOTA, FOTA_INTERVAL_MS, 0, true}
+    {TASK_PERFORM_FOTA, FOTA_INTERVAL_MS, 0, true},
+    {TASK_COMMAND_HANDLING, COMMAND_INTERVAL_MS, 0, false}
 };
 
 // Single buffer definition - Buffer Rules Implementation
@@ -27,6 +30,11 @@ static bool upload_in_progress = false;  // Prevents filling during upload
 static bool buffer_full = false;  // Tracks if buffer is full
 static unsigned long last_upload_attempt = 0;  // For retry delays
 static int upload_retry_count = 0;  // Track retry attempts
+
+// Write command tracking
+static command_state_t current_command = {false, 0, 0};
+static String write_status = ""; // Track if last write was successful
+static String write_executed_timestamp = ""; // Timestamp of last write execution
 
 uint8_t compressed_data[MAX_COMPRESSION_SIZE] = {0}; // Output buffer for compression
 size_t compressed_data_len = 0; // Length of compressed data
@@ -60,6 +68,9 @@ void scheduler_run(void) {
                     break;
                 case TASK_WRITE_REGISTER:
                     execute_write_task();
+                    break;
+                case TASK_COMMAND_HANDLING:
+                    execute_command_task();
                     break;
                 case TASK_UPLOAD_DATA:
                     execute_upload_task();
@@ -207,19 +218,25 @@ void execute_read_task(void) {
 void execute_write_task(void) {
     Serial.println(F("Executing write task..."));
     
-    // Write to export power register (example: 50% power)
-    uint16_t export_power_value = 50;
-    
-    if (!is_valid_write_value(EXPORT_POWER_REGISTER, export_power_value)) {
-        log_error(ERROR_INVALID_REGISTER, "Invalid export power value");
+    if (!current_command.pending) {
+        Serial.println(F("[WRITE] No pending command - skipping"));
+        tasks[TASK_WRITE_REGISTER].enabled = false;
         return;
     }
     
-    String frame = format_request_frame(SLAVE_ADDRESS, FUNCTION_CODE_WRITE, 
-                                       EXPORT_POWER_REGISTER, export_power_value);
+    uint16_t export_power_value = current_command.value;
+    uint16_t target_register = current_command.register_address;
+    
+    if (!is_valid_write_value(target_register, export_power_value)) {
+        log_error(ERROR_INVALID_REGISTER, "Invalid export power value");
+        finalize_command("Failed - Invalid value");
+        return;
+    }
+
+    String frame = format_request_frame(SLAVE_ADDRESS, FUNCTION_CODE_WRITE, target_register, export_power_value);
+
     frame = append_crc_to_frame(frame);
     
-
     String url;
     url.reserve(128);
     url = API_BASE_URL;
@@ -235,13 +252,19 @@ void execute_write_task(void) {
                 char error_msg[64];
                 snprintf(error_msg, sizeof(error_msg), "Write failed with exception: 0x%02X", exception_code);
                 log_error(ERROR_MODBUS_EXCEPTION, error_msg);
+                finalize_command("Failed - Exception");
             } else {
-                Serial.print(F("Write successful: Export power set to "));
-                Serial.print(export_power_value);
-                Serial.println(F("%"));
-                reset_error_state();
+                Serial.print(F("Write successful: Register "));
+                Serial.print(target_register);
+                Serial.print(F(" set to "));
+                Serial.println(export_power_value);
+                finalize_command("Success");
             }
+        } else {
+            finalize_command("Failed - Invalid response");
         }
+    } else {
+        finalize_command("Failed - No response");
     }
 }
 
@@ -319,6 +342,8 @@ void execute_upload_task(void) {
             upload_in_progress = false;  // Re-enable filling on failure
             return;
         }
+        
+        free(aggregated_buffer);
     }
 
     if (compressed_data_len >= 5 && compressed_data_len <= MAX_PAYLOAD_SIZE) {
@@ -397,8 +422,36 @@ void execute_upload_task(void) {
         Serial.println(mac);
 
         String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, compressed_data_len + 3, String(nonce), mac);
-        
+
         if (response.length() > 0) {
+            String action;
+            uint16_t reg = 0;
+            uint16_t val = 0;
+
+            if (extract_command(response, action, reg, val)) {
+                Serial.println(F("[COMMAND] Command detected in cloud response"));
+                
+                if (action.equalsIgnoreCase("write_register")) {
+                    Serial.println(F("[COMMAND] Validating WRITE command"));
+
+                    // Store command atomically
+                    current_command.pending = true;
+                    current_command.register_address = reg;
+                    current_command.value = val;
+                    
+                    tasks[TASK_WRITE_REGISTER].enabled = true;
+                    tasks[TASK_COMMAND_HANDLING].enabled = true;
+
+                } else if (action.equalsIgnoreCase("read_register")) {
+                    Serial.println(F("[COMMAND] Preparing to execute READ task"));
+
+                } else {
+                    Serial.println(F("[COMMAND] Unknown action command received"));
+                }
+            }
+        }
+        
+        if (validate_upload_response(response)) {
             Serial.print(F("[UPLOAD] Success: "));
             Serial.print(compressed_data_len + 3);
             Serial.println(F(" bytes uploaded"));
@@ -455,6 +508,41 @@ void execute_upload_task(void) {
         Serial.println(upload_retry_count);
         return;
     }
+}
+
+void execute_command_task(void) {
+    Serial.println(F("Executing command task..."));
+
+    // FIXED: Always attempt to send result if available
+    if (write_status.length() == 0) {
+        Serial.println(F("[COMMAND] No result to report"));
+        tasks[TASK_COMMAND_HANDLING].enabled = false;
+        return;
+    }
+
+    String frame;
+    frame.reserve(100);
+    frame  = F("{\"command_result\":{");
+    frame += F("\"status\":\"");
+    frame += write_status;
+    frame += F("\",\"executed_at\":\"");
+    frame += write_executed_timestamp;
+    frame += F("\"}}");
+
+    frame = append_crc_to_frame(frame);
+    
+    String url;
+    url.reserve(128);
+    url = UPLOAD_API_BASE_URL;
+    url += "/api/cloud/command_result";
+    String api_key = UPLOAD_API_KEY;
+    String method = "POST";
+    
+    api_command_request_with_retry(url, method, api_key, frame);
+
+    write_status = "";
+    write_executed_timestamp = "";
+    tasks[TASK_COMMAND_HANDLING].enabled = false;
 }
 
 void execute_fota_task() {
@@ -518,4 +606,16 @@ size_t aggregate_buffer_avg(const register_reading_t* buffer, size_t count, regi
 
     *out_buffer = agg_buffer;
     return agg_count;
+}
+
+// Unified command finalization
+void finalize_command(const String& status) {
+    write_status = status;
+    write_executed_timestamp = get_current_timestamp();
+    current_command.pending = false;
+    tasks[TASK_WRITE_REGISTER].enabled = false;
+    tasks[TASK_COMMAND_HANDLING].enabled = true;  // Enable result reporting
+    
+    Serial.print(F("[COMMAND] Finalized with status: "));
+    Serial.println(status);
 }

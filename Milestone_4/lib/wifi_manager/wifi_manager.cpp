@@ -18,6 +18,7 @@ bool wifi_init(void) {
         Serial.println("\nWiFi connected");
         Serial.print("IP address: ");
         Serial.println(WiFi.localIP());
+        init_time();
         return true;
     } else {
         Serial.println("\nWiFi connection failed");

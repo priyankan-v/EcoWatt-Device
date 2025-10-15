@@ -24,4 +24,8 @@ String upload_api_send_request_with_retry(const String& url, const String& metho
 // Send a JSON API request (for config acknowledgments)
 String json_api_send_request(const String& url, const String& method, const String& api_key, const String& json_body);
 
+String api_command_request(const String& url, const String& method, const String& api_key, const String& frame);
+
+void api_command_request_with_retry(const String& url, const String& method, const String& api_key, const String& frame);
+
 #endif
