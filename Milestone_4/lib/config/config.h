@@ -17,11 +17,11 @@
 // Cloud Upload API Configuration
 #define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app"
 #define UPLOAD_API_KEY "ColdPlay2025"
-// #define MANIFEST_API_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/manifest"
-// #define LOG_BASE_URL "https://eco-watt-cloud.vercel.app/api/fota/log"
 #define NTP_SERVER "pool.ntp.org"
 #define UPLOAD_PSK "ColdPlay@EcoWatt2025"
-#define NONCE_ADDRESS 0  // EEPROM address for storing nonce
+
+// Firmware version tracking for FOTA
+#define FIRMWARE_VERSION "1.0.0"
 
 // HTTP configuration
 #define HTTP_TIMEOUT_MS 10000
@@ -35,7 +35,7 @@
 #define HEALTH_CHECK_INTERVAL_MS 30000
 #define WATCHDOG_TIMEOUT_S 30
 #define UPLOAD_INTERVAL_MS 15000 //900000; // 15 minutes
-#define FOTA_INTERVAL_MS 15000 // Change this later on
+// FOTA_INTERVAL_MS removed - FOTA now integrated into upload response (no polling)
 #define COMMAND_INTERVAL_MS 15000
 
 // Modbus configuration

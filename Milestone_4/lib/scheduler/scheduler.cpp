@@ -18,7 +18,7 @@ static scheduler_task_t tasks[TASK_COUNT] = {
     {TASK_READ_REGISTERS, POLL_INTERVAL_MS, 0, true},
     {TASK_WRITE_REGISTER, WRITE_INTERVAL_MS, 0, false},
     {TASK_UPLOAD_DATA, UPLOAD_INTERVAL_MS, 0, true},
-    {TASK_PERFORM_FOTA, FOTA_INTERVAL_MS, 0, true},
+    // FOTA task removed - now integrated into upload response handling
     {TASK_COMMAND_HANDLING, COMMAND_INTERVAL_MS, 0, false}
 };
 
@@ -52,6 +52,8 @@ void scheduler_run(void) {
     if (g_config_manager && g_config_manager->is_initialized()) {
         tasks[TASK_READ_REGISTERS].interval_ms = config_get_sampling_interval_ms();
         tasks[TASK_UPLOAD_DATA].interval_ms = config_get_upload_interval_ms();
+        // Couple command interval to upload interval for synchronized timing
+        tasks[TASK_COMMAND_HANDLING].interval_ms = config_get_upload_interval_ms();
     }
     
     for (int i = 0; i < TASK_COUNT; i++) {
@@ -60,14 +62,12 @@ void scheduler_run(void) {
         }
         
         if (current_time - tasks[i].last_run_ms >= tasks[i].interval_ms) {
-            tasks[i].last_run_ms += tasks[i].interval_ms;
+            // Update last_run_ms BEFORE executing task to prevent re-triggering
+            tasks[i].last_run_ms = current_time;
             
             switch (tasks[i].type) {
                 case TASK_READ_REGISTERS:
                     execute_read_task();
-                    break;
-                case TASK_WRITE_REGISTER:
-                    execute_write_task();
                     break;
                 case TASK_COMMAND_HANDLING:
                     execute_command_task();
@@ -75,9 +75,8 @@ void scheduler_run(void) {
                 case TASK_UPLOAD_DATA:
                     execute_upload_task();
                     break;
-                case TASK_PERFORM_FOTA:
-                    execute_fota_task();
-                    break;
+                // FOTA task removed - now handled in upload response
+                // WRITE task removed - now executes immediately when command received
                 default:
                     break;
             }
@@ -375,29 +374,43 @@ void execute_upload_task(void) {
             Serial.print(F(" "));
         }
         Serial.println();
-        /*
-        // Encrypt the frame
-        uint8_t encrypted_frame_len = 16 + ((compressed_data_len + 15) / 16) * 16; // AES block size alignment
-        uint8_t encrypted_frame[encrypted_frame_len];
-        // memset(encrypted_frame, 0, encrypted_frame_len);
-        encrypt_compressed_frame(compressed_data_frame, compressed_data_len + 1, encrypted_frame); 
-
-        // Add MAC 
-        uint8_t encrypted_frame_with_mac[encrypted_frame_len + 8];
-        memcpy(encrypted_frame_with_mac, encrypted_frame, encrypted_frame_len);
-        calculate_and_add_mac(encrypted_frame, encrypted_frame_len, encrypted_frame_with_mac + encrypted_frame_len);
-        */
         
         // Add CRC for entire frame
         uint8_t upload_frame_with_crc[compressed_data_len + 3]; // metadata + data + CRC
         append_crc_to_upload_frame(compressed_data_frame, compressed_data_len + 1, upload_frame_with_crc);
         
-        Serial.print(F("[UPLOAD] Final frame:"));
-        Serial.print(F("data("));
+        Serial.print(F("[UPLOAD] Frame with CRC: "));
         Serial.print(compressed_data_len + 1);
-        Serial.print(F(") + crc(2) = "));
+        Serial.print(F(" bytes + 2 bytes CRC = "));
         Serial.print(compressed_data_len + 3);
         Serial.println(F(" bytes total"));
+        
+        // === AES-256-CBC ENCRYPTION ===
+        uint8_t iv[16]; // 16-byte IV for AES
+        uint8_t encrypted_payload[compressed_data_len + 32]; // Extra space for PKCS#7 padding
+        size_t encrypted_len = 0;
+        
+        Serial.println(F("[ENCRYPTION] Encrypting payload with AES-256-CBC..."));
+        
+        extern bool encryptPayloadAES_CBC(const uint8_t* plaintext, size_t plaintext_len,
+                                         uint8_t* ciphertext, size_t* ciphertext_len,
+                                         uint8_t* iv_output);
+        
+        if (!encryptPayloadAES_CBC(upload_frame_with_crc, compressed_data_len + 3,
+                                  encrypted_payload, &encrypted_len, iv)) {
+            Serial.println(F("[ENCRYPTION] Encryption failed! Aborting upload."));
+            upload_in_progress = false;
+            return;
+        }
+        
+        // Combine IV + Ciphertext for final payload
+        uint8_t final_payload[16 + encrypted_len];
+        memcpy(final_payload, iv, 16); // First 16 bytes: IV
+        memcpy(final_payload + 16, encrypted_payload, encrypted_len); // Rest: Ciphertext
+        size_t final_payload_len = 16 + encrypted_len;
+        
+        Serial.printf("[ENCRYPTION] Final encrypted payload: IV(16) + Ciphertext(%d) = %d bytes\n",
+                     encrypted_len, final_payload_len);
 
         String url;
         url.reserve(128);
@@ -411,17 +424,17 @@ void execute_upload_task(void) {
         Serial.print(F("[SECURITY] Using Nonce: "));
         Serial.println(nonce);
 
-        // Encode payload to Base64 directly from the byte array
-        String upload_frame_base64 = encodeBase64(upload_frame_with_crc, compressed_data_len + 3);
-        Serial.print(F("[SECURITY] Base64 payload length (size_t): "));
+        // Encode encrypted payload (IV + Ciphertext) to Base64
+        String upload_frame_base64 = encodeBase64(final_payload, final_payload_len);
+        Serial.print(F("[SECURITY] Base64 encoded length: "));
         Serial.println(upload_frame_base64.length());
 
-        // Generate MAC for the upload frame
+        // Generate MAC for the encrypted Base64 payload
         String mac = generateMAC(upload_frame_base64);
         Serial.print(F("[SECURITY] Generated MAC: "));
         Serial.println(mac);
 
-        String response = upload_api_send_request_with_retry(url, method, api_key, upload_frame_with_crc, compressed_data_len + 3, String(nonce), mac);
+        String response = upload_api_send_request_with_retry(url, method, api_key, final_payload, final_payload_len, String(nonce), mac);
 
         if (response.length() > 0) {
             String action;
@@ -432,14 +445,17 @@ void execute_upload_task(void) {
                 Serial.println(F("[COMMAND] Command detected in cloud response"));
                 
                 if (action.equalsIgnoreCase("write_register")) {
-                    Serial.println(F("[COMMAND] Validating WRITE command"));
+                    Serial.println(F("[COMMAND] Executing WRITE command immediately"));
 
                     // Store command atomically
                     current_command.pending = true;
                     current_command.register_address = reg;
                     current_command.value = val;
                     
-                    tasks[TASK_WRITE_REGISTER].enabled = true;
+                    // Execute write immediately (no need to wait for scheduler interval)
+                    execute_write_task();
+                    
+                    // Command task will report result on next interval
                     tasks[TASK_COMMAND_HANDLING].enabled = true;
 
                 } else if (action.equalsIgnoreCase("read_register")) {
@@ -456,7 +472,7 @@ void execute_upload_task(void) {
             Serial.print(compressed_data_len + 3);
             Serial.println(F(" bytes uploaded"));
             
-            // STEP: Process configuration updates from cloud response
+            // STEP 1: Process configuration updates from cloud response
             String config_ack = config_process_cloud_response(response);
             if (config_ack.length() > 0) {
                 // Send configuration acknowledgment to cloud
@@ -464,13 +480,45 @@ void execute_upload_task(void) {
                 send_config_ack_to_cloud(config_ack);
             }
             
-            // STEP: Apply any pending configuration changes after successful upload
+            // STEP 2: Apply any pending configuration changes after successful upload
             if (config_has_pending_changes()) {
                 Serial.println(F("[CONFIG] Applying pending configuration changes"));
                 config_apply_pending_changes();
             }
             
-            // WORKFLOW STEP 4: After successful ACK from cloud → clear buffer
+            // STEP 3: Check for FOTA manifest in cloud response
+            int job_id;
+            String fwUrl, shaExpected, signature;
+            size_t fwSize;
+            
+            extern bool parse_fota_manifest_from_response(const String& response, 
+                                                         int& job_id, 
+                                                         String& fwUrl, 
+                                                         size_t& fwSize, 
+                                                         String& shaExpected, 
+                                                         String& signature);
+            
+            if (parse_fota_manifest_from_response(response, job_id, fwUrl, fwSize, shaExpected, signature)) {
+                Serial.println(F("[FOTA] Firmware update available - initiating download"));
+                
+                extern bool perform_FOTA_with_manifest(int job_id, 
+                                                      const String& fwUrl, 
+                                                      size_t fwSize, 
+                                                      const String& shaExpected, 
+                                                      const String& signature);
+                
+                bool fota_success = perform_FOTA_with_manifest(job_id, fwUrl, fwSize, shaExpected, signature);
+                
+                if (fota_success) {
+                    Serial.println(F("[FOTA] Update successful - restarting in 2 seconds..."));
+                    delay(2000);
+                    ESP.restart();
+                } else {
+                    Serial.println(F("[FOTA] Update failed - continuing normal operation"));
+                }
+            }
+            
+            // STEP 4: After successful ACK from cloud → clear buffer
             Serial.println(F("[WORKFLOW] Successful ACK → clear buffer"));
                 buffer_count = 0;
                 buffer_write_index = 0;
@@ -545,9 +593,9 @@ void execute_command_task(void) {
     tasks[TASK_COMMAND_HANDLING].enabled = false;
 }
 
-void execute_fota_task() {
-    perform_FOTA_with_logging();
-}
+// FOTA task removed - now integrated into upload response handling
+// The cloud sends FOTA manifest in the upload acknowledgment response
+// See execute_upload_task() for FOTA integration
 
 // Compress the buffer and add header
 bool attempt_compression(register_reading_t* buffer, size_t* buffer_count) {
