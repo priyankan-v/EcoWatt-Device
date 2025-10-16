@@ -121,12 +121,12 @@ bool parse_fota_manifest_from_response(const String& response,
 
     JsonObject fota = doc["fota"];
     
-    // Extract FOTA parameters
-    if (fota.containsKey("job_id") && 
-        fota.containsKey("fwUrl") && 
-        fota.containsKey("fwSize") && 
-        fota.containsKey("shaExpected") && 
-        fota.containsKey("signature")) {
+    // Extract FOTA parameters (using ArduinoJson v7 syntax)
+    if (fota["job_id"].is<int>() && 
+        fota["fwUrl"].is<const char*>() && 
+        fota["fwSize"].is<size_t>() && 
+        fota["shaExpected"].is<const char*>() && 
+        fota["signature"].is<const char*>()) {
         
         job_id = fota["job_id"];
         fwUrl = fota["fwUrl"].as<String>();

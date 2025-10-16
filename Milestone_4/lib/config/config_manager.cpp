@@ -22,6 +22,9 @@ static const struct {
 };
 static const size_t REGISTER_MAP_SIZE = sizeof(REGISTER_MAP) / sizeof(REGISTER_MAP[0]);
 
+// Semaphore timeout to prevent deadlocks
+static const TickType_t CONFIG_MUTEX_TIMEOUT = pdMS_TO_TICKS(1000); // 1 second timeout
+
 ConfigManager::ConfigManager() : initialized(false), config_mutex(nullptr), has_pending_config(false) {
     // Set validation limits
     limits.min_sampling_ms = 1000;     // 1 second minimum
@@ -89,7 +92,7 @@ bool ConfigManager::load_from_flash() {
         return false; // No configuration exists
     }
     
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         current_config.sampling_interval_ms = nvs.getUInt("sampling_ms", POLL_INTERVAL_MS);
         current_config.upload_interval_ms = nvs.getUInt("upload_ms", UPLOAD_INTERVAL_MS);
         current_config.slave_address = nvs.getUChar("slave_addr", SLAVE_ADDRESS);
@@ -107,31 +110,41 @@ bool ConfigManager::load_from_flash() {
         current_config.config_valid = true;
         xSemaphoreGive(config_mutex);
         return true;
+    } else {
+        Serial.println(F("[CONFIG] ERROR: Semaphore timeout in load_from_flash"));
+        return false;
     }
     
     return false;
 }
 
 bool ConfigManager::save_to_flash() {
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
-        nvs.putUInt("sampling_ms", current_config.sampling_interval_ms);
-        nvs.putUInt("upload_ms", current_config.upload_interval_ms);
-        nvs.putUChar("slave_addr", current_config.slave_address);
-        nvs.putUChar("reg_count", current_config.register_count);
-        nvs.putBytes("registers", current_config.active_registers, sizeof(current_config.active_registers));
-        
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
+        bool result = save_to_flash_unlocked();
         xSemaphoreGive(config_mutex);
-        return true;
+        return result;
+    } else {
+        Serial.println(F("[CONFIG] ERROR: Semaphore timeout in save_to_flash"));
+        return false;
     }
+}
+
+bool ConfigManager::save_to_flash_unlocked() {
+    // This version assumes the mutex is already held
+    nvs.putUInt("sampling_ms", current_config.sampling_interval_ms);
+    nvs.putUInt("upload_ms", current_config.upload_interval_ms);
+    nvs.putUChar("slave_addr", current_config.slave_address);
+    nvs.putUChar("reg_count", current_config.register_count);
+    nvs.putBytes("registers", current_config.active_registers, sizeof(current_config.active_registers));
     
-    return false;
+    return true;
 }
 
 // Legacy apply_update method removed - configuration now handled through cloud integration
 
 runtime_config_t ConfigManager::get_current_config() {
     runtime_config_t config;
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         config = current_config;
         xSemaphoreGive(config_mutex);
     }
@@ -140,7 +153,7 @@ runtime_config_t ConfigManager::get_current_config() {
 
 uint32_t ConfigManager::get_sampling_interval_ms() {
     uint32_t interval = POLL_INTERVAL_MS;
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         interval = current_config.sampling_interval_ms;
         xSemaphoreGive(config_mutex);
     }
@@ -149,7 +162,7 @@ uint32_t ConfigManager::get_sampling_interval_ms() {
 
 uint32_t ConfigManager::get_upload_interval_ms() {
     uint32_t interval = UPLOAD_INTERVAL_MS;
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         interval = current_config.upload_interval_ms;
         xSemaphoreGive(config_mutex);
     }
@@ -158,7 +171,7 @@ uint32_t ConfigManager::get_upload_interval_ms() {
 
 uint8_t ConfigManager::get_slave_address() {
     uint8_t addr = SLAVE_ADDRESS;
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         addr = current_config.slave_address;
         xSemaphoreGive(config_mutex);
     }
@@ -167,7 +180,7 @@ uint8_t ConfigManager::get_slave_address() {
 
 uint8_t ConfigManager::get_register_count() {
     uint8_t count = READ_REGISTER_COUNT;
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         count = current_config.register_count;
         xSemaphoreGive(config_mutex);
     }
@@ -175,7 +188,7 @@ uint8_t ConfigManager::get_register_count() {
 }
 
 void ConfigManager::get_active_registers(uint16_t* registers, uint8_t max_count) {
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         uint8_t count = min(current_config.register_count, max_count);
         for (uint8_t i = 0; i < count; i++) {
             registers[i] = current_config.active_registers[i];
@@ -225,7 +238,7 @@ uint16_t ConfigManager::get_register_address(const String& name) {
 }
 
 bool ConfigManager::has_pending_changes() {
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         bool pending = has_pending_config;
         xSemaphoreGive(config_mutex);
         return pending;
@@ -234,25 +247,27 @@ bool ConfigManager::has_pending_changes() {
 }
 
 void ConfigManager::apply_pending_config() {
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         if (has_pending_config) {
             Serial.println(F("[CONFIG] Applying pending configuration changes"));
             current_config = pending_config;
             has_pending_config = false;
             
-            // Save to flash
-            if (save_to_flash()) {
+            // Save to flash using unlocked version (we already have the mutex)
+            if (save_to_flash_unlocked()) {
                 Serial.println(F("[CONFIG] Pending configuration applied and saved to NVS"));
             } else {
                 Serial.println(F("[CONFIG] Warning: Failed to save applied configuration to NVS"));
             }
         }
         xSemaphoreGive(config_mutex);
+    } else {
+        Serial.println(F("[CONFIG] ERROR: Semaphore timeout in apply_pending_config"));
     }
 }
 
 void ConfigManager::clear_pending_config() {
-    if (xSemaphoreTake(config_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
         has_pending_config = false;
         Serial.println(F("[CONFIG] Pending configuration cleared"));
         xSemaphoreGive(config_mutex);
@@ -289,7 +304,8 @@ String ConfigManager::process_cloud_config_update(const String& response) {
         
         bool config_changed = false;
         
-        if (xSemaphoreTake(config_mutex, portMAX_DELAY) != pdTRUE) {
+        if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) != pdTRUE) {
+            Serial.println(F("[CONFIG] ERROR: Semaphore timeout in process_cloud_config_update"));
             return "";
         }
         
@@ -477,5 +493,11 @@ bool config_has_pending_changes() {
 void config_apply_pending_changes() {
     if (g_config_manager) {
         g_config_manager->apply_pending_config();
+    }
+}
+
+void config_clear_pending_changes() {
+    if (g_config_manager) {
+        g_config_manager->clear_pending_config();
     }
 }

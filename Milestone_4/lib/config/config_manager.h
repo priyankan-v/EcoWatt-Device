@@ -38,6 +38,7 @@ private:
     
     // Internal methods
     void set_default_config();
+    bool save_to_flash_unlocked();  // Version that doesn't acquire mutex
     bool validate_sampling_interval(uint32_t interval_ms);
     bool validate_upload_interval(uint32_t interval_ms);
     bool validate_slave_address(uint8_t addr);
@@ -92,5 +93,6 @@ void config_get_active_registers(uint16_t* registers, uint8_t max_count);
 String config_process_cloud_response(const String& response);
 bool config_has_pending_changes();
 void config_apply_pending_changes();
+void config_clear_pending_changes();
 
 #endif

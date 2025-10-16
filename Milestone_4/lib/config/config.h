@@ -1,11 +1,11 @@
-#ifndef CONFIG_H
+#ifndef CONFIG_H// Cloud Upload API Configuration
 #define CONFIG_H
 
 #include <Arduino.h>
 #include <pgmspace.h>
 
 // WiFi credentials
-#define WIFI_SSID "Wokwi-GUEST"
+#define WIFI_SSID "Dialog 4G 715"
 #define WIFI_PASSWORD ""
 #define WIFI_CONNECT_TIMEOUT_MS 10000
 #define WIFI_RETRY_DELAY_MS 5000
@@ -14,8 +14,8 @@
 #define API_BASE_URL "http://20.15.114.131:8080"
 #define API_KEY "NjhhZWIwNDU1ZDdmMzg3MzNiMTQ5YWQzOjY4YWViMDQ1NWQ3ZjM4NzMzYjE0OWFjOQ=="
 
-// Cloud Upload API Configuration
-#define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app"
+// Cloud Upload API Configuration  
+#define UPLOAD_API_BASE_URL "http://192.168.8.159:3000"
 #define UPLOAD_API_KEY "ColdPlay2025"
 #define NTP_SERVER "pool.ntp.org"
 #define UPLOAD_PSK "ColdPlay@EcoWatt2025"
@@ -53,7 +53,7 @@ extern const PROGMEM uint16_t READ_REGISTERS[READ_REGISTER_COUNT];
 
 // System configuration
 #define SERIAL_BAUD_RATE 115200
-#define MEMORY_BUFFER_SIZE (UPLOAD_INTERVAL_MS / POLL_INTERVAL_MS)
+#define MEMORY_BUFFER_SIZE 30  // Default fallback buffer size when dynamic allocation fails
 
 // Compression configuration
 #define MAX_COMPRESSION_SIZE (MEMORY_BUFFER_SIZE * 2 * READ_REGISTER_COUNT + 5)

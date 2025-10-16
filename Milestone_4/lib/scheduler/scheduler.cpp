@@ -8,6 +8,7 @@
 #include "compressor.h"
 #include "fota.h"
 #include "encryptionAndSecurity.h"
+#include "esp_task_wdt.h"
 #include "command_parse.h"
 #include "time_utils.h"
 
@@ -22,12 +23,15 @@ static scheduler_task_t tasks[TASK_COUNT] = {
     {TASK_COMMAND_HANDLING, COMMAND_INTERVAL_MS, 0, false}
 };
 
-// Single buffer definition - Buffer Rules Implementation
-static register_reading_t buffer[MEMORY_BUFFER_SIZE];
+// Dynamic buffer definition - Buffer Rules Implementation
+static register_reading_t* buffer = nullptr;  // Dynamic buffer allocated based on config
 static size_t buffer_count = 0;
 static size_t buffer_write_index = 0;  // For circular buffer behavior
 static bool upload_in_progress = false;  // Prevents filling during upload
 static bool buffer_full = false;  // Tracks if buffer is full
+static size_t buffer_size = 0;  // Current allocated buffer size
+static uint32_t last_upload_interval = 0;  // Track config changes
+static uint32_t last_sampling_interval = 0;  // Track config changes
 static unsigned long last_upload_attempt = 0;  // For retry delays
 static int upload_retry_count = 0;  // Track retry attempts
 
@@ -39,6 +43,94 @@ static String write_executed_timestamp = ""; // Timestamp of last write executio
 uint8_t compressed_data[MAX_COMPRESSION_SIZE] = {0}; // Output buffer for compression
 size_t compressed_data_len = 0; // Length of compressed data
 compression_metrics_t compression_metrics = {0}; // Metrics of last compression
+
+// Internal buffer allocation with specific size
+static bool allocate_buffer_internal(size_t new_size) {
+    if (new_size == 0) {
+        Serial.println(F("[BUFFER] Cannot allocate buffer with size 0"));
+        return false;
+    }
+    
+    // Free existing buffer if it exists
+    if (buffer != nullptr) {
+        free(buffer);
+        buffer = nullptr;
+    }
+    
+    // Allocate new buffer
+    buffer = (register_reading_t*)malloc(new_size * sizeof(register_reading_t));
+    if (buffer == nullptr) {
+        Serial.printf("[BUFFER] ERROR: Failed to allocate %zu bytes for buffer\n", 
+                     new_size * sizeof(register_reading_t));
+        buffer_size = 0;
+        return false;
+    }
+    
+    // Initialize buffer to zero
+    memset(buffer, 0, new_size * sizeof(register_reading_t));
+    buffer_size = new_size;
+    buffer_count = 0;
+    buffer_write_index = 0;
+    buffer_full = false;
+    
+    Serial.printf("[BUFFER] Allocated dynamic buffer: %zu samples (%zu bytes)\n", 
+                 buffer_size, buffer_size * sizeof(register_reading_t));
+    return true;
+}
+
+// Public buffer allocation function (calculates size from config)
+void allocate_buffer() {
+    if (!g_config_manager || !g_config_manager->is_initialized()) {
+        Serial.println(F("[BUFFER] Config manager not initialized, using default size"));
+        allocate_buffer_internal(MEMORY_BUFFER_SIZE);
+        return;
+    }
+    
+    uint32_t upload_interval = config_get_upload_interval_ms();
+    uint32_t sampling_interval = config_get_sampling_interval_ms();
+    
+    if (upload_interval == 0 || sampling_interval == 0) {
+        Serial.println(F("[BUFFER] Invalid intervals, using default buffer size"));
+        allocate_buffer_internal(MEMORY_BUFFER_SIZE);
+        return;
+    }
+    
+    size_t calculated_buffer_size = (upload_interval / sampling_interval) + 1;
+    
+    // Enforce reasonable limits
+    if (calculated_buffer_size < 5) {
+        calculated_buffer_size = 5;
+    } else if (calculated_buffer_size > 100) {
+        calculated_buffer_size = 100;
+    }
+    
+    Serial.printf("[BUFFER] Calculating buffer size: %lums / %lums + 1 = %zu samples\n", 
+                 upload_interval, sampling_interval, calculated_buffer_size);
+    
+    allocate_buffer_internal(calculated_buffer_size);
+}
+
+void free_buffer() {
+    if (buffer != nullptr) {
+        free(buffer);
+        buffer = nullptr;
+        buffer_size = 0;
+        buffer_count = 0;
+        buffer_write_index = 0;
+        buffer_full = false;
+        Serial.println(F("[BUFFER] Dynamic buffer freed"));
+    }
+}
+
+// Initialization function
+void scheduler_init() {
+    Serial.println("[SCHEDULER] Initializing scheduler with dynamic buffer...");
+    
+    // Allocate initial buffer based on current configuration
+    allocate_buffer();
+    
+    Serial.println("[SCHEDULER] Scheduler initialization complete");
+}
 
 // PROGMEM data definitions
 const PROGMEM float REGISTER_GAINS[MAX_REGISTERS] = {10.0, 10.0, 100.0, 10.0, 10.0, 10.0, 10.0, 10.0, 1.0, 1.0};
@@ -54,6 +146,36 @@ void scheduler_run(void) {
         tasks[TASK_UPLOAD_DATA].interval_ms = config_get_upload_interval_ms();
         // Couple command interval to upload interval for synchronized timing
         tasks[TASK_COMMAND_HANDLING].interval_ms = config_get_upload_interval_ms();
+        
+        // Recalculate buffer size only when configuration changes
+        uint32_t upload_interval = config_get_upload_interval_ms();
+        uint32_t sampling_interval = config_get_sampling_interval_ms();
+        
+        if (upload_interval != last_upload_interval || sampling_interval != last_sampling_interval || buffer == nullptr) {
+            // Configuration changed or buffer not allocated - reallocate buffer
+            Serial.printf("[BUFFER] Config changed: upload %lu->%lu, sampling %lu->%lu\n", 
+                         last_upload_interval, upload_interval, last_sampling_interval, sampling_interval);
+            
+            size_t calculated_buffer_size = (upload_interval / sampling_interval) + 2; // +2 for safety margin
+            
+            // Set reasonable limits
+            if (calculated_buffer_size < 5) calculated_buffer_size = 5;   // Minimum 5 samples
+            if (calculated_buffer_size > 100) calculated_buffer_size = 100; // Maximum 100 samples
+            
+            Serial.printf("[BUFFER] Calculation: %lu / %lu + 2 = %zu\n", 
+                         upload_interval, sampling_interval, calculated_buffer_size);
+            
+            // Reallocate buffer with new size
+            if (allocate_buffer_internal(calculated_buffer_size)) {
+                last_upload_interval = upload_interval;
+                last_sampling_interval = sampling_interval;
+                Serial.printf("[BUFFER] Dynamic buffer allocated: %zu samples (upload: %lus, sampling: %lus)\n", 
+                             buffer_size, upload_interval/1000, sampling_interval/1000);
+            } else {
+                Serial.println(F("[BUFFER] ERROR: Failed to allocate dynamic buffer, using fallback"));
+                // Keep old values to prevent infinite reallocation attempts
+            }
+        }
     }
     
     for (int i = 0; i < TASK_COUNT; i++) {
@@ -89,6 +211,12 @@ void scheduler_run(void) {
 
 
 void store_register_reading(const uint16_t* values, size_t count) {
+    // Check if buffer is allocated
+    if (buffer == nullptr || buffer_size == 0) {
+        Serial.println(F("[BUFFER] ERROR: Buffer not allocated, skipping sample"));
+        return;
+    }
+    
     // Always stop filling buffer during upload (workflow requirement)
     if (upload_in_progress) {
         Serial.println(F("[BUFFER] Skipping sample - upload in progress"));
@@ -123,12 +251,12 @@ void store_register_reading(const uint16_t* values, size_t count) {
     }
 
     // Advance write index (circular buffer)
-    buffer_write_index = (buffer_write_index + 1) % MEMORY_BUFFER_SIZE;
+    buffer_write_index = (buffer_write_index + 1) % buffer_size;
 
     // Track buffer usage
     if (!buffer_full) {
         buffer_count++;
-        if (buffer_count >= MEMORY_BUFFER_SIZE) {
+        if (buffer_count >= buffer_size) {
             buffer_full = true;
             #if BUFFER_FULL_BEHAVIOR == BUFFER_FULL_BEHAVIOR_CIRCULAR
                 Serial.println(F("[BUFFER] Buffer full - using circular overwrite"));
@@ -138,11 +266,11 @@ void store_register_reading(const uint16_t* values, size_t count) {
         }
     }
 
-    if (buffer_count % MEMORY_BUFFER_SIZE == 0 || buffer_full) {  // Log every (MEMORY_BUFFER_SIZE) samples or when full
+    if (buffer_count % buffer_size == 0 || buffer_full) {  // Log every buffer_size samples or when full
         Serial.print(F("[BUFFER] Samples: "));
         Serial.print(buffer_count);
         Serial.print(F("/"));
-        Serial.print(MEMORY_BUFFER_SIZE);
+        Serial.print(buffer_size);
         Serial.print(F(" (write_index: "));
         Serial.print(buffer_write_index);
         #if BUFFER_FULL_BEHAVIOR == BUFFER_FULL_BEHAVIOR_CIRCULAR
@@ -478,12 +606,42 @@ void execute_upload_task(void) {
                 // Send configuration acknowledgment to cloud
                 extern void send_config_ack_to_cloud(const String& ack_json);
                 send_config_ack_to_cloud(config_ack);
+                // Note: ACK failure doesn't prevent config application
             }
             
             // STEP 2: Apply any pending configuration changes after successful upload
             if (config_has_pending_changes()) {
                 Serial.println(F("[CONFIG] Applying pending configuration changes"));
-                config_apply_pending_changes();
+                
+                // Feed watchdog before potentially blocking operation
+                esp_task_wdt_reset();
+                
+                // Apply with timeout protection
+                bool apply_success = false;
+                unsigned long apply_start = millis();
+                const unsigned long APPLY_TIMEOUT = 5000; // 5 seconds max
+                
+                try {
+                    config_apply_pending_changes();
+                    apply_success = true;
+                    Serial.println(F("[CONFIG] Configuration applied successfully"));
+                } catch (...) {
+                    Serial.println(F("[CONFIG] ERROR: Exception during config application"));
+                }
+                
+                // Check for timeout
+                if (millis() - apply_start > APPLY_TIMEOUT) {
+                    Serial.println(F("[CONFIG] WARNING: Config application took too long"));
+                }
+                
+                // Feed watchdog after config operation
+                esp_task_wdt_reset();
+                
+                if (!apply_success) {
+                    Serial.println(F("[CONFIG] ERROR: Failed to apply configuration changes"));
+                    // Clear pending config to prevent retry loops
+                    config_clear_pending_changes();
+                }
             }
             
             // STEP 3: Check for FOTA manifest in cloud response
@@ -523,7 +681,9 @@ void execute_upload_task(void) {
                 buffer_count = 0;
                 buffer_write_index = 0;
                 buffer_full = false;
-                memset(buffer, 0, sizeof(register_reading_t) * MEMORY_BUFFER_SIZE);
+                if (buffer != nullptr) {
+                    memset(buffer, 0, sizeof(register_reading_t) * buffer_size);
+                }
                 
                 // Reset retry counters on success
                 upload_retry_count = 0;
@@ -555,6 +715,47 @@ void execute_upload_task(void) {
         Serial.print(F("[UPLOAD] No data after compression - retry count: "));
         Serial.println(upload_retry_count);
         return;
+    }
+}
+
+// Send immediate write command acknowledgment 
+void send_write_command_ack(const String& status, const String& error_code, const String& error_message) {
+    Serial.println(F("[COMMAND] Sending immediate write command acknowledgment"));
+    
+    // Create JSON payload for command result
+    String json_payload;
+    json_payload.reserve(256);
+    json_payload = "{\"command_result\":{";
+    json_payload += "\"status\":\"" + status + "\",";
+    
+    // Add current timestamp
+    json_payload += "\"executed_at\":\"" + get_current_timestamp() + "\"";
+    
+    // Add error details if status is failed
+    if (status == "failed" && error_code.length() > 0) {
+        json_payload += ",\"error_code\":\"" + error_code + "\"";
+        if (error_message.length() > 0) {
+            json_payload += ",\"error_message\":\"" + error_message + "\"";
+        }
+    }
+    
+    json_payload += "}}";
+    
+    // Send to the command result endpoint
+    String url = String(UPLOAD_API_BASE_URL) + "/api/cloud/command_result";
+    String api_key = UPLOAD_API_KEY;
+    String method = "POST";
+    
+    Serial.print(F("[COMMAND] Sending ACK: "));
+    Serial.println(json_payload);
+    
+    // Send the acknowledgment (use JSON API function that returns response)
+    String response = json_api_send_request(url, method, api_key, json_payload);
+    
+    if (response.length() > 0 && response.indexOf("success") >= 0) {
+        Serial.println(F("[COMMAND] ✅ Write command ACK sent successfully"));
+    } else {
+        Serial.println(F("[COMMAND] ❌ Write command ACK failed"));
     }
 }
 
@@ -666,4 +867,27 @@ void finalize_command(const String& status) {
     
     Serial.print(F("[COMMAND] Finalized with status: "));
     Serial.println(status);
+    
+    // Send immediate acknowledgment for write commands
+    if (status.startsWith("Success")) {
+        send_write_command_ack("success");
+    } else if (status.startsWith("Failed")) {
+        String error_code = "MODBUS_ERROR";
+        String error_message = status;
+        
+        // Map specific error types
+        if (status.indexOf("Invalid value") >= 0) {
+            error_code = "INVALID_VALUE";
+        } else if (status.indexOf("Exception") >= 0) {
+            error_code = "MODBUS_EXCEPTION";
+        } else if (status.indexOf("No response") >= 0) {
+            error_code = "TIMEOUT";
+            error_message = "Modbus write timeout";
+        } else if (status.indexOf("Invalid response") >= 0) {
+            error_code = "INVALID_RESPONSE";
+            error_message = "Invalid Modbus response";
+        }
+        
+        send_write_command_ack("failed", error_code, error_message);
+    }
 }

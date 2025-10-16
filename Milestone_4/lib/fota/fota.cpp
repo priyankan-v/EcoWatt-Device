@@ -314,21 +314,17 @@ bool perform_FOTA_with_manifest(int job_id,
   
   Serial.println("[FOTA] Manifest signature verified");
   
-  // Step 2. Resume download if needed
+  // Step 2. Clear any previous download state (always download fresh)
+  // Resume is disabled because esp_ota_begin() doesn't support offset writes
   prefs.begin("fota", false);
-  size_t offset = prefs.getULong("offset", 0);
-  if (offset > 0) {
-    Serial.print("[FOTA] Resuming download from offset: ");
-    Serial.println(offset);
-  }
+  prefs.remove("offset");  // Clear any saved offset to prevent corruption
   prefs.putInt("job_id", job_id);
   prefs.end();
-
-  WiFiClientSecure fwClient;
-  fwClient.setCACert(rootCACertificate);
   
+  size_t offset = 0;  // Always start from beginning
+
   HTTPClient fwHttp;
-  if (!fwHttp.begin(fwClient, fwUrl)) { 
+  if (!fwHttp.begin(fwUrl)) { 
     Serial.println("[FOTA] Unable to start HTTP client");
     append_fota_event("ERROR", "FOTA_FAIL", "HTTP_CLIENT_FAILED");
     
@@ -337,12 +333,10 @@ bool perform_FOTA_with_manifest(int job_id,
     return false;
   }
   
-  char rangeHeader[64];
-  sprintf(rangeHeader, "bytes=%u-", (unsigned int)offset);
-  fwHttp.addHeader("Range", rangeHeader);
+  // No Range header - always download complete firmware
   int respCode = fwHttp.GET();
 
-  if (respCode != HTTP_CODE_PARTIAL_CONTENT && respCode != HTTP_CODE_OK) {
+  if (respCode != HTTP_CODE_OK) {
     Serial.printf("[FOTA] HTTP error: %d\n", respCode);
     append_fota_event("ERROR", "FOTA_FAIL", "HTTP_ERROR_" + String(respCode));
     fwHttp.end();
@@ -352,7 +346,7 @@ bool perform_FOTA_with_manifest(int job_id,
     return false;
   }
 
-  int totalWritten = offset;
+  int totalWritten = 0;  // Always start from 0
   WiFiClient *stream = fwHttp.getStreamPtr();
 
   const esp_partition_t* running = esp_ota_get_running_partition();
@@ -408,13 +402,8 @@ bool perform_FOTA_with_manifest(int job_id,
     mbedtls_sha256_update_ret(&ctx, buf, bytesRead);
     totalWritten += bytesRead;
 
-    // Persist progress every 100KB (NO LOGGING)
-    if (totalWritten % 102400 == 0) {
-      prefs.begin("fota", false);
-      prefs.putULong("offset", totalWritten);
-      prefs.end();
-    }
-
+    // Resume disabled - no offset persistence needed
+    
     // Show progress on serial only
     Serial.printf("[FOTA] Progress: %d/%d bytes (%.2f%%)\r\n", 
                   totalWritten, (int)fwSize, 100.0 * totalWritten / fwSize);

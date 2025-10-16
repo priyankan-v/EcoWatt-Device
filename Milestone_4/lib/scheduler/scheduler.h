@@ -38,6 +38,11 @@ typedef struct {
 // Scheduler functions
 void scheduler_run(void);
 
+// Buffer management functions
+void allocate_buffer();
+void free_buffer();
+void scheduler_init();
+
 // Data storage functions
 void store_register_reading(const uint16_t* values, size_t count);
 
@@ -47,6 +52,9 @@ void execute_write_task(void);
 void execute_upload_task(void);
 // execute_fota_task() removed - FOTA now triggered from upload response
 void execute_command_task(void);
+
+// Command acknowledgment functions
+void send_write_command_ack(const String& status, const String& error_code = "", const String& error_message = "");
 
 bool attempt_compression(register_reading_t* buffer, size_t* buffer_count);
 size_t aggregate_buffer_avg(const register_reading_t* buffer, size_t count, register_reading_t** out_buffer);
