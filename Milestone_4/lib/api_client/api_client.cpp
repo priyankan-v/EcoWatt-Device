@@ -91,7 +91,7 @@ String upload_api_send_request(const String& url, const String& method, const St
     http.setTimeout(HTTP_TIMEOUT_MS);
     http.addHeader(F("Content-Type"), F("application/octet-stream"));
     http.addHeader(F("Authorization"), api_key);
-    http.addHeader(F("payload_is_mock_encrypted"), "true");
+    http.addHeader(F("encryption"), "aes-256-cbc");
     http.addHeader(F("nonce"), nonce);
     http.addHeader(F("mac"), mac);
     

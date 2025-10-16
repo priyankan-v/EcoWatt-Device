@@ -1,5 +1,6 @@
 #include "fota.h"
 #include "config.h"
+#include "time_utils.h"
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
@@ -11,15 +12,11 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include <LittleFS.h>
-#include "time.h"
 
 // Constants
-const char *manifestURL = UPLOAD_API_BASE_URL "/api/fota/manifest";
 const char *logURL = UPLOAD_API_BASE_URL "/api/fota/log";
-const char* ntpServer = NTP_SERVER;
 
-String logBuffer[20];
-int logCount = 0;
+// New JSON-based logging system (replaces old buffer-based system)
 
 const char *firmwarePublicKey = R"(-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIn8Ze+wsLb6boVAkc90OoCB8/V6o
@@ -101,173 +98,284 @@ bool verifySignature(const String &jsonString, const String &signatureBase64, co
     }
 }
 
-void logMessage(const String &level, const String &msg) {
-  time_t t = time(NULL);
-  struct tm* tm_info = localtime(&t);
-
-  char buf[50];
-  sprintf(buf, "[%04d-%02d-%02d %02d:%02d:%02d]",
-          tm_info->tm_year + 1900,
-          tm_info->tm_mon + 1,
-          tm_info->tm_mday,
-          tm_info->tm_hour,
-          tm_info->tm_min,
-          tm_info->tm_sec);
-
-  String timestamp = String(buf);
-  String logMsg = timestamp + " " + level + " - " + msg;
-  logBuffer[logCount++] = logMsg;
-  Serial.println(logMsg);
+// Extract target version from firmware URL
+String extract_target_version(const String& fwUrl) {
+    // Simple extraction: look for version pattern in URL
+    // Example: ".../firmware-v1.2.0.bin" -> "1.2.0"
+    int vIndex = fwUrl.indexOf("-v");
+    if (vIndex > 0) {
+        int dotIndex = fwUrl.indexOf(".bin", vIndex);
+        if (dotIndex > 0) {
+            return fwUrl.substring(vIndex + 2, dotIndex);
+        }
+    }
+    return "unknown";
 }
 
-void store_and_upload_log(){ 
-  logMessage("Info", "Uploading logs");
+// Initialize FOTA log file with START event
+bool init_fota_log(const String& jobId, const String& fromVersion, const String& toVersion) {
+    // Delete old log if exists
+    if (LittleFS.exists("/fota_log.json")) {
+        LittleFS.remove("/fota_log.json");
+    }
+    
+    // Mount LittleFS
+    if (!LittleFS.begin(true)) {
+        Serial.println("[FOTA] Failed to mount LittleFS");
+        return false;
+    }
+    
+    // Create new log file
+    File file = LittleFS.open("/fota_log.json", FILE_WRITE);
+    if (!file) {
+        Serial.println("[FOTA] Failed to create log file");
+        return false;
+    }
+    
+    // Create START event JSON
+    JsonDocument doc;
+    doc["ts"] = get_current_timestamp();
+    doc["lvl"] = "INFO";
+    doc["msg"] = "FOTA_START";
+    doc["job"] = jobId;
+    doc["from"] = fromVersion;
+    doc["to"] = toVersion;
+    
+    // Write opening bracket for JSON array
+    file.println("[");
+    
+    // Write START event
+    String eventJson;
+    serializeJson(doc, eventJson);
+    file.println("  " + eventJson);
+    
+    file.close();
+    
+    Serial.println("[FOTA] Log initialized with START event");
+    return true;
+}
 
-  if (!LittleFS.begin(true)) {
-  logMessage("Error", "LittleFS mount failed");
-  }
+// Append error event to log file
+bool append_fota_event(const String& level, const String& message, const String& reason = "") {
+    if (!LittleFS.begin(true)) {
+        Serial.println("[FOTA] Failed to mount LittleFS");
+        return false;
+    }
+    
+    File file = LittleFS.open("/fota_log.json", FILE_APPEND);
+    if (!file) {
+        Serial.println("[FOTA] Failed to open log file for append");
+        return false;
+    }
+    
+    // Create event JSON
+    JsonDocument doc;
+    doc["ts"] = get_current_timestamp();
+    doc["lvl"] = level;
+    doc["msg"] = message;
+    if (reason.length() > 0) {
+        doc["reason"] = reason;
+    }
+    
+    // Write event with comma separator
+    String eventJson;
+    serializeJson(doc, eventJson);
+    file.println("  ," + eventJson);
+    
+    file.close();
+    
+    Serial.printf("[FOTA] Event logged: %s - %s\n", level.c_str(), message.c_str());
+    return true;
+}
 
-  File file = LittleFS.open("/log.txt", FILE_WRITE); // set to FILE_APPEND to keep old logs
-  for (int i = 0; i < logCount; i++) {
-    file.println(logBuffer[i]);
-  }
+// Finalize log, upload to cloud, and clean up
+bool finalize_and_upload_fota_log(const String& jobId, const String& finalStatus, unsigned long durationMs) {
+    if (!LittleFS.begin(true)) {
+        Serial.println("[FOTA] Failed to mount LittleFS");
+        return false;
+    }
+    
+    // Append closing bracket
+    File file = LittleFS.open("/fota_log.json", FILE_APPEND);
+    if (file) {
+        file.println("]");
+        file.close();
+    }
+    
+    // Read complete log file
+    file = LittleFS.open("/fota_log.json", FILE_READ);
+    if (!file) {
+        Serial.println("[FOTA] Failed to open log file for reading");
+        return false;
+    }
+    
+    String eventsJson = file.readString();
+    file.close();
+    
+    // Create final payload
+    JsonDocument payloadDoc;
+    payloadDoc["jobId"] = jobId;
+    payloadDoc["final_status"] = finalStatus;
+    payloadDoc["duration_ms"] = durationMs;
+    
+    // Parse events array from file
+    JsonDocument eventsDoc;
+    DeserializationError error = deserializeJson(eventsDoc, eventsJson);
+    if (!error) {
+        payloadDoc["events"] = eventsDoc.as<JsonArray>();
+    }
+    
+    // Convert to JSON string
+    String payload;
+    serializeJson(payloadDoc, payload);
+    
+    Serial.println("[FOTA] Final log payload:");
+    Serial.println(payload);
+    
+    // Upload to cloud
+    HTTPClient http;
+    http.begin(logURL);
+    http.addHeader("Content-Type", "application/json");
+    
+    int code = http.POST(payload);
+    if (code > 0) {
+        Serial.printf("[FOTA] Log upload complete, response: %d\n", code);
+    } else {
+        Serial.printf("[FOTA] Log upload failed: %s\n", http.errorToString(code).c_str());
+    }
+    http.end();
+    
+    // Delete log file after upload
+    LittleFS.remove("/fota_log.json");
+    Serial.println("[FOTA] Log file deleted");
+    
+    return (code >= 200 && code < 300);
+}
 
-  file.flush();
-  file.close();
-  logCount = 0; 
-
-  file = LittleFS.open("/log.txt", FILE_READ);
-  if (!file) {
-    Serial.println("Failed to open log.txt for reading");
-    return;
-  }
-  String content = file.readString();
-  file.close();
-
-  HTTPClient http;
-  http.begin(logURL);
-  http.addHeader("Content-Type", "text/plain");
-  int code = http.POST(content);
-  if (code > 0) {
-    Serial.printf("Upload complete, response: %d\n", code);
-  } else {
-    Serial.printf("Upload failed: %s\n", http.errorToString(code).c_str());
-  }
-  http.end();
-};
-
-bool perform_FOTA() {
+// New function that accepts manifest parameters (for cloud integration)
+bool perform_FOTA_with_manifest(int job_id, 
+                                const String& fwUrl, 
+                                size_t fwSize, 
+                                const String& shaExpected, 
+                                const String& signature) {
+  
+  unsigned long startMillis = millis();  // Track start time for duration
   Preferences prefs;
-  WiFiClientSecure client;
-  HTTPClient http;
-  client.setCACert(rootCACertificate); // Replace the certificate in case it expires
-  // client.setInsecure();             // Use only for preproduction testing
-
-  // Step 1. Download manifest
-  // Remove client when CA certificate verification is not needed
-  if (!http.begin(client, manifestURL)) { 
-    logMessage("Error", String("Unable to start http client on: ") + manifestURL);
-    return 0;
-  }; 
-
-  Serial.println("Root CA Certificate verified");
-  int code = http.GET();
-  if (code != 200) {
-    logMessage("Error", "http GET failed for manifest with code:" + String(code));
-    return 0;
-  };
-
-  String payload = http.getString();
-  http.end();
-
-  JsonDocument doc;
-  deserializeJson(doc, payload);
-  int job_id = doc["job_id"];
-  String fwUrl = doc["fwUrl"];
-  size_t fwSize = doc["fwSize"]; //no of bytes
-  String shaExpected = doc["shaExpected"];
-  String signature = doc["signature"].as<String>();
-
+  
+  // Check if this is a new update
   prefs.begin("fota", false);
-  if ((prefs.getInt("job_id", -1) >= job_id) && (prefs.getULong("offset", 0) == 0)) {
-    Serial.println("No new updates");
-    return 0;
-  };
+  int stored_job_id = prefs.getInt("job_id", -1);
+  size_t stored_offset = prefs.getULong("offset", 0);
+  
+  if ((stored_job_id >= job_id) && (stored_offset == 0)) {
+    Serial.println("[FOTA] No new updates (job_id already processed)");
+    prefs.end();
+    return false;
+  }
   prefs.end();
-
-  Serial.println("Job ID: " + job_id);
-  Serial.println("Firmware URL: " + fwUrl);
-  Serial.print("Firmware Size in bytes: ");
-  Serial.println(fwSize);
-  Serial.println("SHA: " + shaExpected);
-  Serial.println("Manifest signature: " + signature);
-
-  doc.remove("signature");
+  
+  // Extract version info
+  String fromVersion = FIRMWARE_VERSION;
+  String toVersion = extract_target_version(fwUrl);
+  String jobIdStr = "fota-job-" + String(job_id);
+  
+  // Initialize log file with START event
+  if (!init_fota_log(jobIdStr, fromVersion, toVersion)) {
+    Serial.println("[FOTA] Failed to initialize log");
+    return false;
+  }
+  
+  Serial.println("[FOTA] Starting firmware download");
+  Serial.print("[FOTA] Job ID: "); Serial.println(job_id);
+  Serial.print("[FOTA] From: "); Serial.print(fromVersion);
+  Serial.print(" → To: "); Serial.println(toVersion);
+  Serial.print("[FOTA] Firmware URL: "); Serial.println(fwUrl);
+  Serial.print("[FOTA] Firmware Size: "); Serial.print(fwSize); Serial.println(" bytes");
+  
+  // Create manifest JSON for signature verification
+  JsonDocument doc;
+  doc["job_id"] = job_id;
+  doc["fwUrl"] = fwUrl;
+  doc["fwSize"] = fwSize;
+  doc["shaExpected"] = shaExpected;
+  
   String origManifest;
   serializeJson(doc, origManifest);
-
-  // (Optional) verify manifest signature using firmwarePublicKey
-  if (verifySignature(origManifest, signature, firmwarePublicKey)) {
-        Serial.println("Manifest signature verified");
-    } else {
-        // Serial.println("Manifest signature invalid");
-        logMessage("Error", "Manifest signature invalid");
-        return 0;
-    }
-
-  // Step 2. Resume download if needed
+  
+  // Verify manifest signature
+  if (!verifySignature(origManifest, signature, firmwarePublicKey)) {
+    Serial.println("[FOTA] Manifest signature invalid");
+    append_fota_event("ERROR", "FOTA_FAIL", "SIGNATURE_INVALID");
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
+  }
+  
+  Serial.println("[FOTA] Manifest signature verified");
+  
+  // Step 2. Clear any previous download state (always download fresh)
+  // Resume is disabled because esp_ota_begin() doesn't support offset writes
   prefs.begin("fota", false);
-  size_t offset = prefs.getULong("offset", 0);
-  if (offset > 0) {
-    offset = 0;
-  };
+  prefs.remove("offset");  // Clear any saved offset to prevent corruption
   prefs.putInt("job_id", job_id);
   prefs.end();
+  
+  size_t offset = 0;  // Always start from beginning
 
-  WiFiClientSecure fwClient;
-  fwClient.setCACert(rootCACertificate);
-  // fwClient.setInsecure(); // Preproduction only
   HTTPClient fwHttp;
-  if (!fwHttp.begin(fwClient, fwUrl)) { 
-    logMessage("Error", String("Unable to start http client on: ") + fwUrl);
-    return 0;
-  };
-  char rangeHeader[64];
-  sprintf(rangeHeader, "bytes=%u-", (unsigned int)offset);
-  fwHttp.addHeader("Range", rangeHeader);
+  if (!fwHttp.begin(fwUrl)) { 
+    Serial.println("[FOTA] Unable to start HTTP client");
+    append_fota_event("ERROR", "FOTA_FAIL", "HTTP_CLIENT_FAILED");
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
+  }
+  
+  // No Range header - always download complete firmware
   int respCode = fwHttp.GET();
 
-  if (respCode != HTTP_CODE_PARTIAL_CONTENT && respCode != HTTP_CODE_OK) {
-    Serial.println(rangeHeader);
-    Serial.printf("HTTP error: %d\n", respCode);
-    logMessage("Error", String("Firmware HTTP response error with code:" + String(respCode)));
+  if (respCode != HTTP_CODE_OK) {
+    Serial.printf("[FOTA] HTTP error: %d\n", respCode);
+    append_fota_event("ERROR", "FOTA_FAIL", "HTTP_ERROR_" + String(respCode));
     fwHttp.end();
-    return 0;
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
   }
 
-  int totalWritten = offset;
-  int totalSize = fwSize;
+  int totalWritten = 0;  // Always start from 0
   WiFiClient *stream = fwHttp.getStreamPtr();
 
   const esp_partition_t* running = esp_ota_get_running_partition();
   const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
 
-  logMessage("Info", "Running partition:" + String(running->label) + ", Next OTA partition:" + String(next->label));
+  Serial.printf("[FOTA] Running: %s, Next: %s\n", running->label, next->label);
 
   esp_ota_handle_t otaHandle = 0;
   esp_err_t err = esp_ota_begin(next, fwSize, &otaHandle);
   if (err != ESP_OK) {
-    Serial.printf("esp_ota_begin failed: %s\n", esp_err_to_name(err));
-    logMessage("Error", "Unable to allocate partition for new firmware");
-    return 0;
+    Serial.printf("[FOTA] esp_ota_begin failed: %s\n", esp_err_to_name(err));
+    append_fota_event("ERROR", "FOTA_FAIL", "OTA_BEGIN_FAILED");
+    fwHttp.end();
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
   }
 
-  // uint8_t buf[1024];
-  uint8_t *buf = (uint8_t *)malloc(4096); // using heap since a bigger buffer size causes stack overflow
+  uint8_t *buf = (uint8_t *)malloc(4096);
   if (!buf) {
-    logMessage("Error", "Unable to allocate Heap buffer");
+    Serial.println("[FOTA] Failed to allocate buffer");
+    append_fota_event("ERROR", "FOTA_FAIL", "MEMORY_ALLOCATION_FAILED");
     esp_ota_end(otaHandle);
-    return 0;
+    fwHttp.end();
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
   }
 
   unsigned char hashBuf[32];
@@ -276,34 +384,36 @@ bool perform_FOTA() {
   mbedtls_sha256_init(&ctx);
   mbedtls_sha256_starts_ret(&ctx, 0);
 
+  // Download firmware (NO VERBOSE LOGGING)
   while (fwHttp.connected() && (bytesRead = stream->readBytes(buf, 4096)) > 0) {
     err = esp_ota_write(otaHandle, buf, bytesRead);
     if (err != ESP_OK) {
-      Serial.printf("esp_ota_write failed: %s\n", esp_err_to_name(err));
-      logMessage("Error", "Firmware chunk write failed");
+      Serial.printf("[FOTA] esp_ota_write failed: %s\n", esp_err_to_name(err));
+      append_fota_event("ERROR", "FOTA_FAIL", "WRITE_FAILED");
       free(buf);
       esp_ota_end(otaHandle);
-      return 0;
+      fwHttp.end();
+      
+      unsigned long duration = millis() - startMillis;
+      finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+      return false;
     }
 
     mbedtls_sha256_update_ret(&ctx, buf, bytesRead);
     totalWritten += bytesRead;
 
-    // Persist progress (write offset to nvs every 100KB)
-    if (totalWritten % 102400 == 0) {
-      logMessage("Info", String(totalWritten) + " Bytes Written");
-      prefs.begin("fota", false);
-      prefs.putULong("offset", totalWritten);
-      prefs.end();
-    };
-
-    Serial.printf("Progress: %d/%d bytes (%.2f%%)\r\n", totalWritten, fwSize, 100.0 * totalWritten / fwSize);
+    // Resume disabled - no offset persistence needed
+    
+    // Show progress on serial only
+    Serial.printf("[FOTA] Progress: %d/%d bytes (%.2f%%)\r\n", 
+                  totalWritten, (int)fwSize, 100.0 * totalWritten / fwSize);
   }
 
-  logMessage("Info", "Firmware Writing finished");
-    prefs.begin("fota", false);
-    prefs.putULong("offset", totalWritten);
-    prefs.end();
+  Serial.println("[FOTA] Download complete");
+  prefs.begin("fota", false);
+  prefs.putULong("offset", totalWritten);
+  prefs.end();
+  
   free(buf);
   buf = nullptr;
 
@@ -317,49 +427,52 @@ bool perform_FOTA() {
     sprintf(hexBuf, "%02X", hashBuf[i]);
     computedHash += hexBuf;
   }
-  // Step 4. Verify hash
+  
+  // Verify hash
   if (!computedHash.equalsIgnoreCase(shaExpected)) {   
-    logMessage("Error", "SHA mismatch, abort");
-    Serial.println("Computed Hash:" + computedHash);
+    Serial.println("[FOTA] SHA mismatch");
+    Serial.println("[FOTA] Computed: " + computedHash);
+    Serial.println("[FOTA] Expected: " + shaExpected);
+    append_fota_event("ERROR", "FOTA_FAIL", "HASH_MISMATCH");
     esp_ota_abort(otaHandle);
-    return 0;
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
   }
-  logMessage("Info", "SHA Verified");
+  
+  Serial.println("[FOTA] SHA verified");
 
   err = esp_ota_end(otaHandle);
   if (err != ESP_OK) {
-    Serial.printf("esp_ota_end failed: %s\n", esp_err_to_name(err));
-    logMessage("Error", "Invalid Firmware");
-    return 0;
+    Serial.printf("[FOTA] esp_ota_end failed: %s\n", esp_err_to_name(err));
+    append_fota_event("ERROR", "FOTA_FAIL", "OTA_END_FAILED");
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
   }
 
   err = esp_ota_set_boot_partition(next);
   if (err != ESP_OK) {
-    Serial.printf("esp_ota_set_boot_partition failed: %s\n", esp_err_to_name(err));
-    logMessage("Error", "Unable to select the new boot partition");
-    return 0;
+    Serial.printf("[FOTA] esp_ota_set_boot_partition failed: %s\n", esp_err_to_name(err));
+    append_fota_event("ERROR", "FOTA_FAIL", "SET_BOOT_PARTITION_FAILED");
+    
+    unsigned long duration = millis() - startMillis;
+    finalize_and_upload_fota_log(jobIdStr, "FAILURE", duration);
+    return false;
   }
 
   prefs.begin("fota", false);
   prefs.putULong("offset", 0);
   prefs.end();
 
-  // Step 5. Report success
-  logMessage("Info", "Firmware validated and ready for booting");
+  // SUCCESS - Log final event
+  Serial.println("[FOTA] Firmware validated and ready");
+  append_fota_event("INFO", "FOTA_SUCCESS");
+  
+  unsigned long duration = millis() - startMillis;
+  finalize_and_upload_fota_log(jobIdStr, "SUCCESS", duration);
+  
   return true;
 }
-
-void perform_FOTA_with_logging(){
-  configTime(19800, 0, NTP_SERVER); // Adjusted for SL
-  logMessage("Info", "Starting FOTA");
-  bool restart = perform_FOTA(); 
-  if (!restart){
-    logMessage("Error", "FOTA Failed");
-  };
-  store_and_upload_log(); 
-  if (restart) {
-    Serial.println("Restarting in 1000 ms");
-    delay(1000);
-    ESP.restart();
-  };
-};

@@ -96,62 +96,75 @@ void send_config_ack_to_cloud(const String& ack_json) {
     }
 }
 
+bool parse_fota_manifest_from_response(const String& response, 
+                                       int& job_id, 
+                                       String& fwUrl, 
+                                       size_t& fwSize, 
+                                       String& shaExpected, 
+                                       String& signature) {
+    if (response.length() == 0) {
+        return false;
+    }
+
+    // Parse JSON response
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+    
+    if (error) {
+        return false;
+    }
+
+    // Check if fota section exists
+    if (!doc["fota"].is<JsonObject>()) {
+        return false;
+    }
+
+    JsonObject fota = doc["fota"];
+    
+    // Extract FOTA parameters (using ArduinoJson v7 syntax)
+    if (fota["job_id"].is<int>() && 
+        fota["fwUrl"].is<const char*>() && 
+        fota["fwSize"].is<size_t>() && 
+        fota["shaExpected"].is<const char*>() && 
+        fota["signature"].is<const char*>()) {
+        
+        job_id = fota["job_id"];
+        fwUrl = fota["fwUrl"].as<String>();
+        fwSize = fota["fwSize"];
+        shaExpected = fota["shaExpected"].as<String>();
+        signature = fota["signature"].as<String>();
+        
+        Serial.println(F("[FOTA] Manifest parsed from cloud response"));
+        return true;
+    }
+
+    return false;
+}
+
 void encrypt_compressed_frame(const uint8_t* data, size_t len, uint8_t* output_data) {
-    // Placeholder encryption - AES-128-CBC would be implemented here
-    // For production: implement AES encryption with proper key management
-    
-    Serial.print(F("[ENCRYPTION STUB] Processing "));
-    Serial.print(len);
-    Serial.println(F(" bytes"));
-    
-    // For now, just copy the data (no actual encryption)
+    // Deprecated - replaced with real AES-256-CBC encryption
+    // This function is no longer used
+    Serial.println(F("[WARNING] encrypt_compressed_frame() is deprecated"));
     memcpy(output_data, data, len);
-    
-    // Placeholder: In production, this would:
-    // 1. Generate or use stored AES key
-    // 2. Generate random IV
-    // 3. Encrypt data using AES-128-CBC
-    // 4. Prepend IV to encrypted data
 }
 
 void calculate_and_add_mac(const uint8_t* data, size_t len, uint8_t* mac_output) {
-    // Placeholder MAC calculation - real HMAC-SHA256 will be implemented later
-    // For production:
-    //  1. Load shared secret key
-    //  2. Calculate HMAC-SHA256(key, data, len)
-    //  3. Truncate result to required length (e.g., 8 or 16 bytes)
-
-    // Stub: Generate deterministic but fake MAC for testing
-    for (size_t i = 0; i < 8; i++) {
-        mac_output[i] = (uint8_t)(0xAA ^ (i * 0x11));
-    }
-
-    // Debug logs
-    Serial.print(F("[SECURITY] MAC stub calculated for "));
-    Serial.print(len);
-    Serial.println(F(" bytes"));
-
-    Serial.print(F("[SECURITY] MAC: "));
-    for (size_t i = 0; i < 8; i++) {
-        Serial.print(mac_output[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
+    // Deprecated - MAC is now calculated using generateMAC() from encryptionAndSecurity
+    // This function is no longer used
+    Serial.println(F("[WARNING] calculate_and_add_mac() is deprecated"));
+    memset(mac_output, 0, 8);
 }
 
-
-void append_crc_to_upload_frame(const uint8_t* encrypted_frame, size_t frame_length, uint8_t* output_frame) {
-    memcpy(output_frame, encrypted_frame, frame_length);
-        
-    // Calculate CRC (in production, CRC would cover encrypted_data + MAC)
-    uint16_t crc = calculateCRC(encrypted_frame, frame_length);
+void append_crc_to_upload_frame(const uint8_t* frame, size_t frame_length, uint8_t* output_frame) {
+    // Copy original frame
+    memcpy(output_frame, frame, frame_length);
     
-    // Append CRC to the end of the frame (little-endian format)
-    output_frame[frame_length] = crc & 0xFF;         // Low byte first
-    output_frame[frame_length + 1] = (crc >> 8) & 0xFF; // High byte second
+    // Calculate CRC for the frame
+    uint16_t crc = calculateCRC(frame, frame_length);
     
-    // Note: In production, frame structure would be:
-    // [encrypted_data][MAC][CRC] where CRC covers encrypted_data+MAC
+    // Append CRC (little-endian)
+    output_frame[frame_length] = crc & 0xFF;           // Low byte
+    output_frame[frame_length + 1] = (crc >> 8) & 0xFF; // High byte
     
-    return;
+    Serial.printf("[CRC] Calculated CRC: 0x%04X for %d bytes\n", crc, frame_length);
 }
