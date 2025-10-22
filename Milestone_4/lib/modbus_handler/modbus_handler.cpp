@@ -18,7 +18,7 @@ bool validate_modbus_response(const String& response) {
     }
     
     // Verify CRC
-    if (!verify_frame_crc(response)) {
+    if (!checkCRC(response)) {
         log_error(ERROR_CRC_FAILED, "CRC validation failed");
         return false;
     }
@@ -49,12 +49,8 @@ uint8_t get_exception_code(const String& response) {
     return strtoul(exception_str.c_str(), nullptr, 16);
 }
 
-bool is_valid_register(uint16_t register_addr) {
-    return register_addr < MAX_REGISTERS;
-}
-
 bool is_valid_write_value(uint16_t register_addr, uint16_t value) {
-    if (!is_valid_register(register_addr)) {
+    if (!(register_addr < MAX_REGISTERS)) {
         return false;
     }
     
@@ -142,10 +138,6 @@ String append_crc_to_frame(const String& frame_without_crc) {
     snprintf(crc_hex, sizeof(crc_hex), "%02X%02X", crc & 0xFF, (crc >> 8) & 0xFF);
     
     return frame_without_crc + String(crc_hex);
-}
-
-bool verify_frame_crc(const String& frame_with_crc) {
-    return checkCRC(frame_with_crc);
 }
 
 size_t get_expected_response_length(uint8_t function_code, uint16_t register_count) {
