@@ -4,8 +4,14 @@
 #include <Arduino.h>
 #include <pgmspace.h>
 
+#define POWER_MANAGMENT 1
+#define DVFS 1
+#define LIGHT_SLEEP 1
+#define IDLE_DELAY 0
+#define SERIAL_GATING 0
+
 // WiFi credentials
-#define WIFI_SSID "Dialog 4G 715"
+#define WIFI_SSID "Jazoolee_PC"
 #define WIFI_PASSWORD ""
 #define WIFI_CONNECT_TIMEOUT_MS 10000
 #define WIFI_RETRY_DELAY_MS 5000
@@ -15,7 +21,7 @@
 #define API_KEY "NjhhZWIwNDU1ZDdmMzg3MzNiMTQ5YWQzOjY4YWViMDQ1NWQ3ZjM4NzMzYjE0OWFjOQ=="
 
 // Cloud Upload API Configuration  
-#define UPLOAD_API_BASE_URL "http://192.168.8.159:3000"
+#define UPLOAD_API_BASE_URL "https://eco-watt-cloud.vercel.app"
 #define UPLOAD_API_KEY "ColdPlay2025"
 #define NTP_SERVER "pool.ntp.org"
 #define UPLOAD_PSK "ColdPlay@EcoWatt2025"

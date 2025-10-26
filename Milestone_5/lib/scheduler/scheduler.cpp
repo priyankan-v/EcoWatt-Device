@@ -11,6 +11,8 @@
 #include "esp_task_wdt.h"
 #include "command_parse.h"
 #include "time_utils.h"
+#include "wifi_manager.h"
+
 
 extern NonceManager nonceManager; // Declare the global instance from main.cpp
 
@@ -104,7 +106,7 @@ void allocate_buffer() {
         calculated_buffer_size = 100;
     }
     
-    Serial.printf("[BUFFER] Calculating buffer size: %lums / %lums + 1 = %zu samples\n", 
+    Serial.printf("[BUFFER] Calculating buffer size: %ums / %ums + 1 = %zu samples\n", 
                  upload_interval, sampling_interval, calculated_buffer_size);
     
     allocate_buffer_internal(calculated_buffer_size);
@@ -153,7 +155,7 @@ void scheduler_run(void) {
         
         if (upload_interval != last_upload_interval || sampling_interval != last_sampling_interval || buffer == nullptr) {
             // Configuration changed or buffer not allocated - reallocate buffer
-            Serial.printf("[BUFFER] Config changed: upload %lu->%lu, sampling %lu->%lu\n", 
+            Serial.printf("[BUFFER] Config changed: upload %u->%u, sampling %u->%u\n", 
                          last_upload_interval, upload_interval, last_sampling_interval, sampling_interval);
             
             size_t calculated_buffer_size = (upload_interval / sampling_interval) + 2; // +2 for safety margin
@@ -162,14 +164,14 @@ void scheduler_run(void) {
             if (calculated_buffer_size < 5) calculated_buffer_size = 5;   // Minimum 5 samples
             if (calculated_buffer_size > 100) calculated_buffer_size = 100; // Maximum 100 samples
             
-            Serial.printf("[BUFFER] Calculation: %lu / %lu + 2 = %zu\n", 
+            Serial.printf("[BUFFER] Calculation: %u / %u + 2 = %zu\n", 
                          upload_interval, sampling_interval, calculated_buffer_size);
             
             // Reallocate buffer with new size
             if (allocate_buffer_internal(calculated_buffer_size)) {
                 last_upload_interval = upload_interval;
                 last_sampling_interval = sampling_interval;
-                Serial.printf("[BUFFER] Dynamic buffer allocated: %zu samples (upload: %lus, sampling: %lus)\n", 
+                Serial.printf("[BUFFER] Dynamic buffer allocated: %zu samples (upload: %us, sampling: %us)\n\r", 
                              buffer_size, upload_interval/1000, sampling_interval/1000);
             } else {
                 Serial.println(F("[BUFFER] ERROR: Failed to allocate dynamic buffer, using fallback"));
@@ -177,7 +179,7 @@ void scheduler_run(void) {
             }
         }
     }
-    
+
     for (int i = 0; i < TASK_COUNT; i++) {
         if (!tasks[i].enabled) {
             continue;
@@ -190,12 +192,64 @@ void scheduler_run(void) {
             switch (tasks[i].type) {
                 case TASK_READ_REGISTERS:
                     execute_read_task();
+                    if (POWER_MANAGMENT) {
+                        current_time = millis();
+                        unsigned long read_slack = tasks[i].interval_ms - (current_time - tasks[i].last_run_ms);
+                        unsigned long upload_slack = tasks[2].interval_ms - (current_time - tasks[2].last_run_ms);
+                        if (read_slack > 0 && upload_slack > 0) {
+                            if (read_slack < upload_slack) {
+                                if (LIGHT_SLEEP) {
+                                    esp_err_t timer_result = esp_sleep_enable_timer_wakeup(read_slack * 1000); // micro_seconds
+                                    if (timer_result == ESP_OK){
+                                        Serial.println("Timer Success");
+                                    };
+                                    Serial.flush();
+                                    esp_err_t wakeup_result = esp_light_sleep_start(); 
+                                    if (wakeup_result == ESP_OK) {
+                                        Serial.printf("Read Slack: %lu\n\r", read_slack);
+                                        unsigned long wakeup_time = millis();
+                                        Serial.printf("Light Sleep Time: %lu\n\r", wakeup_time - current_time);
+                                        Serial.begin(SERIAL_BAUD_RATE);
+                                        wifi_init();
+                                        Serial.printf("Wifi Reconnection Time: %lu\n\r", millis() - wakeup_time);
+                                    };
+                                } else if (IDLE_DELAY) {
+                                    delay(read_slack);
+                                };
+                            } else {
+                                if (LIGHT_SLEEP) {
+                                    esp_sleep_enable_timer_wakeup(upload_slack * 1000); // micro_seconds
+                                    Serial.flush();
+                                    esp_light_sleep_start();
+                                    Serial.begin(SERIAL_BAUD_RATE);
+                                    wifi_init();
+                                } else if (IDLE_DELAY) {
+                                    delay(upload_slack);
+                                };
+                            };                        
+                        };
+                    };
                     break;
                 case TASK_COMMAND_HANDLING:
                     execute_command_task();
                     break;
                 case TASK_UPLOAD_DATA:
                     execute_upload_task();
+                    if (POWER_MANAGMENT) {
+                        current_time = millis();
+                        unsigned long read_slack = tasks[i].interval_ms - (current_time - tasks[i].last_run_ms);
+                        if (read_slack > 0) {
+                            if (LIGHT_SLEEP) {
+                                esp_sleep_enable_timer_wakeup(read_slack * 1000); // micro_seconds
+                                Serial.flush();
+                                esp_light_sleep_start();
+                                Serial.begin(SERIAL_BAUD_RATE);
+                                wifi_init();
+                            } else if (IDLE_DELAY) {
+                                delay(read_slack);
+                            };                     
+                        };
+                    };
                     break;
                 // FOTA task removed - now handled in upload response
                 // WRITE task removed - now executes immediately when command received
@@ -291,7 +345,7 @@ void store_register_reading(const uint16_t* values, size_t count) {
 
 
 void execute_read_task(void) {
-    // Serial.println(F("Executing read task..."));
+    Serial.println(F("Executing read task..."));
     
     // Get current configuration
     uint8_t slave_addr = config_get_slave_address();

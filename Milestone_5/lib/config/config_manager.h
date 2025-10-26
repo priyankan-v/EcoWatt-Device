@@ -27,13 +27,13 @@ typedef struct {
 
 class ConfigManager {
 private:
+    bool initialized;
+    SemaphoreHandle_t config_mutex;
+    bool has_pending_config;    
     runtime_config_t current_config;
     runtime_config_t pending_config;
-    bool has_pending_config;
     config_limits_t limits;
     Preferences nvs;
-    SemaphoreHandle_t config_mutex;
-    bool initialized;
     static const char* NVS_NAMESPACE;
     
     // Internal methods
