@@ -44,3 +44,9 @@ libraries by scanning project source files.
 
 More information about PlatformIO Library Dependency Finder
 - https://docs.platformio.org/page/librarymanager/ldf.html
+
+
+<hr>
+
+### config_manager
+- This is a singleton pattern implementation.(The whole program shares only one config vault)

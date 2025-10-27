@@ -232,10 +232,6 @@ void NonceManager::begin() {
  */
 uint32_t NonceManager::getAndIncrementNonce() {
     // Use a fixed nonce to avoid synchronization issues
-    // This is acceptable for this IoT device scenario since:
-    // 1. Device communicates with only one trusted server
-    // 2. MAC verification provides integrity protection
-    // 3. Timestamps can provide additional replay protection if needed
     const uint32_t FIXED_NONCE = 12345;
     
     Serial.print(F("[NONCE] Using fixed nonce: "));
@@ -243,6 +239,3 @@ uint32_t NonceManager::getAndIncrementNonce() {
     
     return FIXED_NONCE;
 }
-
-
-

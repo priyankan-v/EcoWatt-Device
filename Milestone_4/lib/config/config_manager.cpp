@@ -9,22 +9,23 @@ static const struct {
     const char* name;
     uint16_t address;
 } REGISTER_MAP[] = {
-    {"voltage", 0x0000},
-    {"current", 0x0001},
-    {"power", 0x0002},
-    {"energy", 0x0003},
-    {"frequency", 0x0004},
-    {"power_factor", 0x0005},
-    {"temperature", 0x0006},
-    {"humidity", 0x0007},
-    {"export_power", 0x0008},
-    {"import_power", 0x0009}
+    {"phase_voltage", 0x0000},
+    {"phase_current", 0x0001},
+    {"phase_frequency", 0x0002},
+    {"pv1_voltage", 0x0003},
+    {"pv2_voltage", 0x0004},
+    {"pv1_current", 0x0005},
+    {"pv2_current", 0x0006},
+    {"inverter_temperature", 0x0007},
+    {"export_power_percentage", 0x0008},
+    {"output_power", 0x0009}
 };
 static const size_t REGISTER_MAP_SIZE = sizeof(REGISTER_MAP) / sizeof(REGISTER_MAP[0]);
 
 // Semaphore timeout to prevent deadlocks
 static const TickType_t CONFIG_MUTEX_TIMEOUT = pdMS_TO_TICKS(1000); // 1 second timeout
 
+//construtor
 ConfigManager::ConfigManager() : initialized(false), config_mutex(nullptr), has_pending_config(false) {
     // Set validation limits
     limits.min_sampling_ms = 1000;     // 1 second minimum
@@ -36,6 +37,7 @@ ConfigManager::ConfigManager() : initialized(false), config_mutex(nullptr), has_
     set_default_config();
 }
 
+// destructor - manual garbage collection
 ConfigManager::~ConfigManager() {
     if (config_mutex != nullptr) {
         vSemaphoreDelete(config_mutex);
@@ -49,12 +51,12 @@ void ConfigManager::set_default_config() {
     current_config.slave_address = SLAVE_ADDRESS;
     current_config.register_count = 4;
     
-    // Default registers: voltage, current, power, frequency
-    current_config.active_registers[0] = 0x0000; // voltage
-    current_config.active_registers[1] = 0x0001; // current
-    current_config.active_registers[2] = 0x0002; // power
-    current_config.active_registers[3] = 0x0004; // frequency
-    
+    // Default registers: Phase Voltage, Phase Current, Phase Frequency, Output Power
+    current_config.active_registers[0] = 0x0000; // phase_voltage
+    current_config.active_registers[1] = 0x0001; // phase_current
+    current_config.active_registers[2] = 0x0002; // phase_frequency
+    current_config.active_registers[3] = 0x0009; // output_power
+
     current_config.config_valid = true;
 }
 
@@ -66,24 +68,24 @@ bool ConfigManager::init() {
     // Create mutex
     config_mutex = xSemaphoreCreateMutex();
     if (config_mutex == nullptr) {
-        Serial.println(F("ConfigManager: Failed to create mutex"));
+        Serial.println(F("[ConfigManager]: Failed to create mutex"));
         return false;
     }
     
     // Initialize NVS
     if (!nvs.begin(NVS_NAMESPACE, false)) {
-        Serial.println(F("ConfigManager: Failed to initialize NVS"));
+        Serial.println(F("[ConfigManager]: Failed to initialize NVS"));
         return false;
     }
     
     // Load configuration from flash
     if (!load_from_flash()) {
-        Serial.println(F("ConfigManager: Using default configuration"));
+        Serial.println(F("[ConfigManager]: Using default configuration"));
         save_to_flash(); // Save defaults
     }
     
     initialized = true;
-    Serial.println(F("ConfigManager: Initialized successfully"));
+    Serial.println(F("[ConfigManager]: Initialized successfully"));
     return true;
 }
 
@@ -93,6 +95,7 @@ bool ConfigManager::load_from_flash() {
     }
     
     if (xSemaphoreTake(config_mutex, CONFIG_MUTEX_TIMEOUT) == pdTRUE) {
+        // reading each config parameter from NVS
         current_config.sampling_interval_ms = nvs.getUInt("sampling_ms", POLL_INTERVAL_MS);
         current_config.upload_interval_ms = nvs.getUInt("upload_ms", UPLOAD_INTERVAL_MS);
         current_config.slave_address = nvs.getUChar("slave_addr", SLAVE_ADDRESS);

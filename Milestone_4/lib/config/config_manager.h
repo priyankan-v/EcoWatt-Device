@@ -49,7 +49,6 @@ public:
     ConfigManager();
     ~ConfigManager();
     
-    // Core methods as specified
     bool load_from_flash();
     bool save_to_flash();
     runtime_config_t get_current_config();
@@ -61,7 +60,6 @@ public:
     uint8_t get_register_count();
     void get_active_registers(uint16_t* registers, uint8_t max_count);
     
-    // Initialization
     bool init();
     bool is_initialized();
     
