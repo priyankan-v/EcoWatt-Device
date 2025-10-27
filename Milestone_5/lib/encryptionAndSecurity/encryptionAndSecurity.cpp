@@ -1,6 +1,6 @@
 #include "encryptionAndSecurity.h"
 #include "config.h"
-#include <LittleFS.h>
+#include <SPIFFS.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/md.h>
 #include <mbedtls/aes.h>
@@ -196,24 +196,24 @@ bool encryptPayloadAES_CBC(const uint8_t* plaintext, size_t plaintext_len,
 }
 
 
-// --- NonceManager Implementation (LittleFS-based) ---
+// --- NonceManager Implementation (SPIFFS-based) ---
 
 /**
- * @brief Initializes LittleFS and creates nonce file if it doesn't exist.
+ * @brief Initializes SPIFFS and creates nonce file if it doesn't exist.
  */
 void NonceManager::begin() {
-    // Mount LittleFS
-    if (!LittleFS.begin(true)) {
-        Serial.println(F("[NONCE] Failed to mount LittleFS"));
+    // Mount SPIFFS
+    if (!SPIFFS.begin(true)) {
+        Serial.println(F("[NONCE] Failed to mount SPIFFS"));
         return;
     }
     
-    Serial.println(F("[NONCE] LittleFS mounted successfully"));
+    Serial.println(F("[NONCE] SPIFFS mounted successfully"));
     
     // Check if nonce file exists
-    if (!LittleFS.exists(nonce_file)) {
+    if (!SPIFFS.exists(nonce_file)) {
         Serial.println(F("[NONCE] Nonce file not found, creating with initial value 0"));
-        File file = LittleFS.open(nonce_file, "w");
+        File file = SPIFFS.open(nonce_file, "w");
         if (file) {
             file.print("0");
             file.close();

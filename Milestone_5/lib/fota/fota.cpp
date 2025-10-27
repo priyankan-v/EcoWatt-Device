@@ -11,7 +11,7 @@
 #include <mbedtls/base64.h>
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
-#include <LittleFS.h>
+#include <SPIFFS.h>
 
 // Constants
 const char *logURL = UPLOAD_API_BASE_URL "/api/fota/log";
@@ -115,18 +115,18 @@ String extract_target_version(const String& fwUrl) {
 // Initialize FOTA log file with START event
 bool init_fota_log(const String& jobId, const String& fromVersion, const String& toVersion) {
     // Delete old log if exists
-    if (LittleFS.exists("/fota_log.json")) {
-        LittleFS.remove("/fota_log.json");
+    if (SPIFFS.exists("/fota_log.json")) {
+        SPIFFS.remove("/fota_log.json");
     }
     
-    // Mount LittleFS
-    if (!LittleFS.begin(true)) {
-        Serial.println("[FOTA] Failed to mount LittleFS");
+    // Mount SPIFFS
+    if (!SPIFFS.begin(true)) {
+        Serial.println("[FOTA] Failed to mount SPIFFS");
         return false;
     }
     
     // Create new log file
-    File file = LittleFS.open("/fota_log.json", FILE_WRITE);
+    File file = SPIFFS.open("/fota_log.json", FILE_WRITE);
     if (!file) {
         Serial.println("[FOTA] Failed to create log file");
         return false;
@@ -157,12 +157,12 @@ bool init_fota_log(const String& jobId, const String& fromVersion, const String&
 
 // Append error event to log file
 bool append_fota_event(const String& level, const String& message, const String& reason = "") {
-    if (!LittleFS.begin(true)) {
-        Serial.println("[FOTA] Failed to mount LittleFS");
+    if (!SPIFFS.begin(true)) {
+        Serial.println("[FOTA] Failed to mount SPIFFS");
         return false;
     }
     
-    File file = LittleFS.open("/fota_log.json", FILE_APPEND);
+    File file = SPIFFS.open("/fota_log.json", FILE_APPEND);
     if (!file) {
         Serial.println("[FOTA] Failed to open log file for append");
         return false;
@@ -190,20 +190,20 @@ bool append_fota_event(const String& level, const String& message, const String&
 
 // Finalize log, upload to cloud, and clean up
 bool finalize_and_upload_fota_log(const String& jobId, const String& finalStatus, unsigned long durationMs) {
-    if (!LittleFS.begin(true)) {
-        Serial.println("[FOTA] Failed to mount LittleFS");
+    if (!SPIFFS.begin(true)) {
+        Serial.println("[FOTA] Failed to mount SPIFFS");
         return false;
     }
     
     // Append closing bracket
-    File file = LittleFS.open("/fota_log.json", FILE_APPEND);
+    File file = SPIFFS.open("/fota_log.json", FILE_APPEND);
     if (file) {
         file.println("]");
         file.close();
     }
     
     // Read complete log file
-    file = LittleFS.open("/fota_log.json", FILE_READ);
+    file = SPIFFS.open("/fota_log.json", FILE_READ);
     if (!file) {
         Serial.println("[FOTA] Failed to open log file for reading");
         return false;
@@ -246,7 +246,7 @@ bool finalize_and_upload_fota_log(const String& jobId, const String& finalStatus
     http.end();
     
     // Delete log file after upload
-    LittleFS.remove("/fota_log.json");
+    SPIFFS.remove("/fota_log.json");
     Serial.println("[FOTA] Log file deleted");
     
     return (code >= 200 && code < 300);
